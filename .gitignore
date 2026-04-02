@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # v0 sandbox internal files
 __v0_runtime_loader.js
 __v0_devtools.tsx
@@ -14,3 +15,17 @@ next.user-config.*
 node_modules
 .next/
 .DS_Store
+=======
+node_modules
+.next
+dist
+build
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+coverage
+.DS_Store
+*.log
+>>>>>>> 02b4c7f2d329b8b9424d4a33114ecc7882a95ca9
