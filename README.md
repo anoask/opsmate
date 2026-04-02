@@ -35,7 +35,7 @@ The project is being extended with backend integration, Dockerized services, and
 ### Planned backend / infrastructure
 - NestJS or Node backend
 - FastAPI microservice for AI-assisted classification/recommendations
-- MongoDB
+- Oracle DB
 - Docker
 - GitHub Actions
 - Terraform

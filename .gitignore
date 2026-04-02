@@ -1,31 +1,28 @@
-<<<<<<< HEAD
-# v0 sandbox internal files
-__v0_runtime_loader.js
-__v0_devtools.tsx
-__v0_jsx-dev-runtime.ts
+# v0 sandbox / vercel artifacts
+.v0
+_v0_runtime_loader.js
+_v0_runtime_loader.j
+_v0_devtools.tsx
+_v0_jsx-dev-runtime.ts
 .snowflake/
 .v0-trash/
 .vercel/
 next.user-config.*
 
-# Environment variables
-.env*.local
-
-# Common ignores
-node_modules
-.next/
-.DS_Store
-=======
+# dependencies / build output
 node_modules
 .next
 dist
 build
+coverage
+
+# env files
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-coverage
+
+# OS / logs
 .DS_Store
 *.log
->>>>>>> 02b4c7f2d329b8b9424d4a33114ecc7882a95ca9
