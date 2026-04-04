@@ -15,6 +15,10 @@ node_modules
 dist
 build
 coverage
+apps/web/data
+*.db
+*.db-shm
+*.db-wal
 
 # env files
 .env

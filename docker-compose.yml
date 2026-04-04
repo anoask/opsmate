@@ -1,0 +1,21 @@
+services:
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
+      SQLITE_DB_PATH: ${SQLITE_DB_PATH:-/app/data/opsmate.db}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - opsmate-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  opsmate-data:
