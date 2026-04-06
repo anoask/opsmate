@@ -503,24 +503,53 @@ function seedRunbooks(db: Database.Database) {
 
 function initializeDatabase() {
   const databasePath = getDatabasePath()
-  ensureDatabaseDirectory(databasePath)
+  console.info('[db] initializing sqlite database', {
+    databasePath,
+    nodeEnv: process.env.NODE_ENV ?? 'unknown',
+  })
 
-  const db = new Database(databasePath)
-  db.pragma('journal_mode = WAL')
-  createSchema(db)
-  ensureIncidentColumns(db)
-  const refreshedSeedIncidents = seedIncidents(db)
-  backfillIncidentLifecycleTables(
-    db,
-    refreshedSeedIncidents
-      ? {
-          replaceExistingForIds: getCurrentDemoIncidents().map((incident) => incident.id),
-        }
-      : undefined,
-  )
-  seedRunbooks(db)
+  try {
+    ensureDatabaseDirectory(databasePath)
+    console.info('[db] ensured database directory')
 
-  return db
+    const db = new Database(databasePath)
+    console.info('[db] opened sqlite database')
+
+    db.pragma('journal_mode = WAL')
+    console.info('[db] enabled WAL mode')
+
+    createSchema(db)
+    console.info('[db] created schema')
+
+    ensureIncidentColumns(db)
+    console.info('[db] ensured legacy incident columns')
+
+    const refreshedSeedIncidents = seedIncidents(db)
+    console.info('[db] seeded incidents', {
+      refreshedSeedIncidents: Boolean(refreshedSeedIncidents),
+    })
+
+    backfillIncidentLifecycleTables(
+      db,
+      refreshedSeedIncidents
+        ? {
+            replaceExistingForIds: getCurrentDemoIncidents().map((incident) => incident.id),
+          }
+        : undefined,
+    )
+    console.info('[db] backfilled lifecycle tables')
+
+    seedRunbooks(db)
+    console.info('[db] seeded runbooks')
+
+    return db
+  } catch (error) {
+    console.error('[db] failed to initialize sqlite database', {
+      databasePath,
+      error,
+    })
+    throw error
+  }
 }
 
 declare global {

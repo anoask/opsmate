@@ -14,7 +14,9 @@ export async function GET() {
       service: 'opsmate-web',
       datastore: 'sqlite',
     })
-  } catch {
+  } catch (error) {
+    console.error('[health] healthcheck failed', { error })
+
     return NextResponse.json(
       {
         status: 'error',
