@@ -2,6 +2,8 @@
 
 OpsMate is a full-stack incident operations app for infrastructure teams. It combines incident visibility, runbook access, and incident-derived analytics in a single Next.js service with built-in API routes and SQLite persistence.
 
+https://opsmate-production.up.railway.app/
+
 ## Screenshots
 
 ### Dashboard
