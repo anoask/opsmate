@@ -18,7 +18,7 @@ import { buildDashboardIncidentSnapshot } from "@/lib/dashboard/incidents"
 import type { Incident } from "@/lib/types"
 
 export default function DashboardPage() {
-  const dashboardRange = defaultAnalyticsDateRange
+  const dashboardRange = '30d' satisfies typeof defaultAnalyticsDateRange
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [isLoadingIncidents, setIsLoadingIncidents] = useState(true)
   const [incidentsWarning, setIncidentsWarning] = useState<string | null>(null)
