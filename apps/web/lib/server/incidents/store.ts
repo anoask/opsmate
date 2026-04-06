@@ -3,6 +3,7 @@ import {
   incidentDtoSchema,
   type IncidentDto,
 } from '@/lib/server/incidents/schema'
+import type { StoredIncidentNotificationRecord } from '@/lib/server/notifications/store'
 import { getDb } from '@/lib/server/db'
 
 function cloneIncident(incident: IncidentDto): IncidentDto {
@@ -421,6 +422,7 @@ export function commitStoredIncidentLifecycleMutation(options: {
   incident: IncidentDto
   events: StoredIncidentEventRecord[]
   notes?: StoredIncidentNoteRecord[]
+  notifications?: StoredIncidentNotificationRecord[]
   expectedCurrentStatus?: IncidentDto['status']
   expectedCurrentAssignedTo?: string | null
   expectedCurrentSeverity?: IncidentDto['severity']
@@ -582,6 +584,45 @@ export function commitStoredIncidentLifecycleMutation(options: {
         author: note.author,
         content: note.content,
         created_at: note.createdAt,
+      })
+    }
+
+    for (const notification of options.notifications ?? []) {
+      db.prepare(
+        `INSERT INTO incident_notifications (
+          id,
+          incident_id,
+          event_id,
+          type,
+          title,
+          message,
+          incident_title,
+          incident_severity,
+          created_at,
+          read_at
+        ) VALUES (
+          @id,
+          @incident_id,
+          @event_id,
+          @type,
+          @title,
+          @message,
+          @incident_title,
+          @incident_severity,
+          @created_at,
+          @read_at
+        )`,
+      ).run({
+        id: notification.id,
+        incident_id: notification.incidentId,
+        event_id: notification.eventId ?? null,
+        type: notification.type,
+        title: notification.title,
+        message: notification.message,
+        incident_title: notification.incidentTitle,
+        incident_severity: notification.incidentSeverity,
+        created_at: notification.createdAt,
+        read_at: notification.readAt ?? null,
       })
     }
 

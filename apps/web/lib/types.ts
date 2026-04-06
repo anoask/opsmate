@@ -129,6 +129,30 @@ export interface Notification {
   channels: NotificationChannel[]
 }
 
+export type IncidentNotificationType =
+  | 'incident_created_critical'
+  | 'incident_assigned'
+  | 'incident_reopened'
+  | 'incident_resolved'
+
+export interface IncidentNotification {
+  id: string
+  incidentId: string
+  eventId: string | null
+  type: IncidentNotificationType
+  title: string
+  message: string
+  incidentTitle: string
+  incidentSeverity: Severity
+  createdAt: string
+  readAt: string | null
+}
+
+export interface IncidentNotificationFeed {
+  notifications: IncidentNotification[]
+  unreadCount: number
+}
+
 export interface RunbookSuggestion {
   id: string
   title: string

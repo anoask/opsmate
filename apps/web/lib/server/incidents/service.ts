@@ -20,6 +20,7 @@ import {
   type IncidentSeverityChangeInput,
   type IncidentDto,
 } from '@/lib/server/incidents/schema'
+import type { StoredIncidentNotificationRecord } from '@/lib/server/notifications/store'
 
 type LifecycleTimelineEvent = IncidentDto['timeline'][number] & {
   createdAt: string
@@ -93,6 +94,28 @@ function buildNoteRecord(
   }
 }
 
+function buildLifecycleNotification(options: {
+  incident: IncidentDto
+  eventId?: string
+  type: StoredIncidentNotificationRecord['type']
+  title: string
+  message: string
+  createdAt: string
+}): StoredIncidentNotificationRecord {
+  return {
+    id: `notif_${randomUUID()}`,
+    incidentId: options.incident.id,
+    eventId: options.eventId ?? null,
+    type: options.type,
+    title: options.title,
+    message: options.message,
+    incidentTitle: options.incident.title,
+    incidentSeverity: options.incident.severity,
+    createdAt: options.createdAt,
+    readAt: null,
+  }
+}
+
 function createCommentMutation(
   incident: IncidentDto,
   actor: string,
@@ -126,6 +149,7 @@ function persistLifecycleMutation(
   options: {
     events: LifecycleTimelineEvent[]
     notes?: LifecycleNote[]
+    notifications?: StoredIncidentNotificationRecord[]
     primaryTransitionEventId?: string
     expectedCurrentStatus?: IncidentDto['status']
     expectedCurrentAssignedTo?: string | null
@@ -144,6 +168,7 @@ function persistLifecycleMutation(
       expectedCurrentStatus: options.expectedCurrentStatus,
       expectedCurrentAssignedTo: options.expectedCurrentAssignedTo,
       expectedCurrentSeverity: options.expectedCurrentSeverity,
+      notifications: options.notifications,
       events: options.events.map((event) => {
         const isPrimaryTransition = event.id === options.primaryTransitionEventId
 
@@ -220,6 +245,7 @@ function createAcknowledgedIncident(
     incident: optionalComment.incident,
     events: [event, ...optionalComment.events],
     notes: optionalComment.notes,
+    notifications: [] as StoredIncidentNotificationRecord[],
     primaryTransitionEventId: event.id,
     expectedCurrentStatus: incident.status,
     fromStatus: incident.status,
@@ -267,6 +293,19 @@ function createAssignedIncident(
     expectedCurrentAssignedTo: incident.assignedTo,
     fromAssignedTo: incident.assignedTo,
     toAssignedTo: input.assignee,
+    notifications: [
+      buildLifecycleNotification({
+        incident: {
+          ...incident,
+          assignedTo: input.assignee,
+        } satisfies IncidentDto,
+        eventId: event.id,
+        type: 'incident_assigned',
+        title: incident.assignedTo ? 'Incident reassigned' : 'Incident assigned',
+        message: `${incident.id} was ${incident.assignedTo ? 'reassigned' : 'assigned'} to ${input.assignee}.`,
+        createdAt: event.createdAt,
+      }),
+    ] as StoredIncidentNotificationRecord[],
   }
 }
 
@@ -279,6 +318,7 @@ function createResolvedIncident(
       incident,
       events: [] as LifecycleTimelineEvent[],
       notes: [] as LifecycleNote[],
+      notifications: [] as StoredIncidentNotificationRecord[],
       primaryTransitionEventId: undefined,
       expectedCurrentStatus: undefined,
       fromStatus: incident.status,
@@ -309,6 +349,19 @@ function createResolvedIncident(
     incident: optionalComment.incident,
     events: [event, ...optionalComment.events],
     notes: optionalComment.notes,
+    notifications: [
+      buildLifecycleNotification({
+        incident: {
+          ...incident,
+          status: 'resolved',
+        } satisfies IncidentDto,
+        eventId: event.id,
+        type: 'incident_resolved',
+        title: 'Incident resolved',
+        message: `${incident.id} was resolved by ${input.actor}.`,
+        createdAt: event.createdAt,
+      }),
+    ] as StoredIncidentNotificationRecord[],
     primaryTransitionEventId: event.id,
     expectedCurrentStatus: incident.status,
     fromStatus: incident.status,
@@ -349,6 +402,7 @@ function createSeverityChangedIncident(
     } satisfies IncidentDto,
     events: [event] as LifecycleTimelineEvent[],
     notes: [] as LifecycleNote[],
+    notifications: [] as StoredIncidentNotificationRecord[],
     primaryTransitionEventId: event.id,
     expectedCurrentStatus: incident.status,
     expectedCurrentSeverity: incident.severity,
@@ -388,6 +442,19 @@ function createReopenedIncident(
     incident: optionalComment.incident,
     events: [event, ...optionalComment.events],
     notes: optionalComment.notes,
+    notifications: [
+      buildLifecycleNotification({
+        incident: {
+          ...incident,
+          status: 'acknowledged',
+        } satisfies IncidentDto,
+        eventId: event.id,
+        type: 'incident_reopened',
+        title: 'Incident reopened',
+        message: `${incident.id} was reopened by ${input.actor}.`,
+        createdAt: event.createdAt,
+      }),
+    ] as StoredIncidentNotificationRecord[],
     primaryTransitionEventId: event.id,
     expectedCurrentStatus: incident.status,
     fromStatus: incident.status,
@@ -421,6 +488,7 @@ export function acknowledgeIncidentById(
   return persistLifecycleMutation(mutation.incident, {
     events: mutation.events,
     notes: mutation.notes,
+    notifications: mutation.notifications,
     primaryTransitionEventId: mutation.primaryTransitionEventId,
     expectedCurrentStatus: mutation.expectedCurrentStatus,
     expectedCurrentSeverity: incident.severity,
@@ -437,6 +505,7 @@ export function assignIncidentById(id: string, input: IncidentAssignInput) {
   return persistLifecycleMutation(mutation.incident, {
     events: mutation.events,
     notes: mutation.notes,
+    notifications: mutation.notifications,
     primaryTransitionEventId: mutation.primaryTransitionEventId,
     expectedCurrentStatus: mutation.expectedCurrentStatus,
     expectedCurrentAssignedTo: mutation.expectedCurrentAssignedTo,
@@ -457,6 +526,7 @@ export function changeIncidentSeverityById(
   return persistLifecycleMutation(mutation.incident, {
     events: mutation.events,
     notes: mutation.notes,
+    notifications: mutation.notifications,
     primaryTransitionEventId: mutation.primaryTransitionEventId,
     expectedCurrentStatus: mutation.expectedCurrentStatus,
     expectedCurrentSeverity: mutation.expectedCurrentSeverity,
@@ -480,6 +550,7 @@ export function resolveIncidentById(
   return persistLifecycleMutation(mutation.incident, {
     events: mutation.events,
     notes: mutation.notes,
+    notifications: mutation.notifications,
     primaryTransitionEventId: mutation.primaryTransitionEventId,
     expectedCurrentStatus: incident.status,
     expectedCurrentSeverity: incident.severity,
@@ -499,6 +570,7 @@ export function reopenIncidentById(
   return persistLifecycleMutation(mutation.incident, {
     events: mutation.events,
     notes: mutation.notes,
+    notifications: mutation.notifications,
     primaryTransitionEventId: mutation.primaryTransitionEventId,
     expectedCurrentStatus: mutation.expectedCurrentStatus,
     expectedCurrentSeverity: incident.severity,

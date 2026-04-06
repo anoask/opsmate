@@ -102,6 +102,27 @@ function createSchema(db: Database.Database) {
       FOREIGN KEY (incident_id) REFERENCES incidents(id)
     );
 
+    CREATE TABLE IF NOT EXISTS incident_notifications (
+      id TEXT PRIMARY KEY,
+      incident_id TEXT NOT NULL,
+      event_id TEXT,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      incident_title TEXT NOT NULL,
+      incident_severity TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      read_at TEXT,
+      FOREIGN KEY (incident_id) REFERENCES incidents(id),
+      FOREIGN KEY (event_id) REFERENCES incident_events(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_incident_notifications_created_at
+      ON incident_notifications(created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_incident_notifications_read_at
+      ON incident_notifications(read_at);
+
     CREATE TABLE IF NOT EXISTS runbooks (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
