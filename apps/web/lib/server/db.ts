@@ -76,6 +76,32 @@ function createSchema(db: Database.Database) {
       notes_json TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS incident_events (
+      id TEXT PRIMARY KEY,
+      incident_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      actor TEXT,
+      description TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      from_status TEXT,
+      to_status TEXT,
+      from_severity TEXT,
+      to_severity TEXT,
+      from_assigned_to TEXT,
+      to_assigned_to TEXT,
+      metadata_json TEXT,
+      FOREIGN KEY (incident_id) REFERENCES incidents(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS incident_notes (
+      id TEXT PRIMARY KEY,
+      incident_id TEXT NOT NULL,
+      author TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (incident_id) REFERENCES incidents(id)
+    );
+
     CREATE TABLE IF NOT EXISTS runbooks (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -95,6 +121,28 @@ function createSchema(db: Database.Database) {
       last_executed TEXT
     );
   `)
+}
+
+function hasColumn(
+  db: Database.Database,
+  tableName: string,
+  columnName: string,
+) {
+  const columns = db
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all() as Array<{ name: string }>
+
+  return columns.some((column) => column.name === columnName)
+}
+
+function ensureIncidentColumns(db: Database.Database) {
+  if (!hasColumn(db, 'incidents', 'acknowledged_at')) {
+    db.exec('ALTER TABLE incidents ADD COLUMN acknowledged_at TEXT')
+  }
+
+  if (!hasColumn(db, 'incidents', 'acknowledged_by')) {
+    db.exec('ALTER TABLE incidents ADD COLUMN acknowledged_by TEXT')
+  }
 }
 
 function seedIncidents(db: Database.Database) {
@@ -193,7 +241,169 @@ function seedIncidents(db: Database.Database) {
 
   if (latestSeedTimestamp < getAnalyticsWindowStart('90d').getTime()) {
     seedTransaction(parsedIncidents)
+    return true
   }
+
+  return false
+}
+
+function parseLegacyTimelineTimestamp(
+  referenceIsoTimestamp: string,
+  displayTimestamp: string,
+) {
+  const match = displayTimestamp.match(/^(\d{2}):(\d{2})$/)
+
+  if (!match) {
+    return referenceIsoTimestamp
+  }
+
+  const referenceDate = new Date(referenceIsoTimestamp)
+
+  if (Number.isNaN(referenceDate.getTime())) {
+    return referenceIsoTimestamp
+  }
+
+  referenceDate.setUTCHours(Number(match[1]), Number(match[2]), 0, 0)
+  return referenceDate.toISOString()
+}
+
+function backfillIncidentLifecycleTables(
+  db: Database.Database,
+  options?: { replaceExistingForIds?: string[] },
+) {
+  if (options?.replaceExistingForIds && options.replaceExistingForIds.length > 0) {
+    const placeholders = options.replaceExistingForIds.map(() => '?').join(', ')
+    db.prepare(
+      `DELETE FROM incident_events WHERE incident_id IN (${placeholders})`,
+    ).run(...options.replaceExistingForIds)
+    db.prepare(
+      `DELETE FROM incident_notes WHERE incident_id IN (${placeholders})`,
+    ).run(...options.replaceExistingForIds)
+  }
+
+  const incidentRows = db.prepare(
+    `SELECT
+      id,
+      created_at,
+      timeline_json,
+      notes_json
+    FROM incidents`,
+  ).all() as Array<{
+    id: string
+    created_at: string
+    timeline_json: string
+    notes_json: string
+  }>
+
+  const eventCountByIncidentId = new Map(
+    (
+      db.prepare(
+        `SELECT incident_id, COUNT(*) as count
+         FROM incident_events
+         GROUP BY incident_id`,
+      ).all() as Array<{ incident_id: string; count: number }>
+    ).map((row) => [row.incident_id, row.count]),
+  )
+
+  const noteCountByIncidentId = new Map(
+    (
+      db.prepare(
+        `SELECT incident_id, COUNT(*) as count
+         FROM incident_notes
+         GROUP BY incident_id`,
+      ).all() as Array<{ incident_id: string; count: number }>
+    ).map((row) => [row.incident_id, row.count]),
+  )
+
+  const insertEvent = db.prepare(`
+    INSERT INTO incident_events (
+      id,
+      incident_id,
+      type,
+      actor,
+      description,
+      created_at,
+      from_status,
+      to_status,
+      from_severity,
+      to_severity,
+      from_assigned_to,
+      to_assigned_to,
+      metadata_json
+    ) VALUES (
+      @id,
+      @incident_id,
+      @type,
+      @actor,
+      @description,
+      @created_at,
+      @from_status,
+      @to_status,
+      @from_severity,
+      @to_severity,
+      @from_assigned_to,
+      @to_assigned_to,
+      @metadata_json
+    )
+  `)
+
+  const insertNote = db.prepare(`
+    INSERT INTO incident_notes (
+      id,
+      incident_id,
+      author,
+      content,
+      created_at
+    ) VALUES (
+      @id,
+      @incident_id,
+      @author,
+      @content,
+      @created_at
+    )
+  `)
+
+  const backfillTransaction = db.transaction(() => {
+    for (const row of incidentRows) {
+      if ((eventCountByIncidentId.get(row.id) ?? 0) === 0) {
+        const timeline = JSON.parse(row.timeline_json) as IncidentDto['timeline']
+
+        for (const event of timeline) {
+          insertEvent.run({
+            id: event.id,
+            incident_id: row.id,
+            type: event.type,
+            actor: event.user ?? null,
+            description: event.description,
+            created_at: parseLegacyTimelineTimestamp(row.created_at, event.timestamp),
+            from_status: null,
+            to_status: null,
+            from_severity: null,
+            to_severity: null,
+            from_assigned_to: null,
+            to_assigned_to: null,
+            metadata_json: null,
+          })
+        }
+      }
+
+      if ((noteCountByIncidentId.get(row.id) ?? 0) === 0) {
+        const notes = JSON.parse(row.notes_json) as IncidentDto['notes']
+
+        for (const note of notes) {
+          insertNote.run({
+            id: note.id,
+            incident_id: row.id,
+            author: note.user,
+            content: note.content,
+            created_at: parseLegacyTimelineTimestamp(row.created_at, note.timestamp),
+          })
+        }
+      }
+    }
+  })
+
+  backfillTransaction()
 }
 
 function seedRunbooks(db: Database.Database) {
@@ -277,7 +487,16 @@ function initializeDatabase() {
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   createSchema(db)
-  seedIncidents(db)
+  ensureIncidentColumns(db)
+  const refreshedSeedIncidents = seedIncidents(db)
+  backfillIncidentLifecycleTables(
+    db,
+    refreshedSeedIncidents
+      ? {
+          replaceExistingForIds: getCurrentDemoIncidents().map((incident) => incident.id),
+        }
+      : undefined,
+  )
   seedRunbooks(db)
 
   return db

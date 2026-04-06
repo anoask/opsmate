@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Clock,
   MessageSquare,
+  RotateCcw,
   User,
   XCircle,
   type LucideIcon,
@@ -28,6 +29,7 @@ export const incidentSeverityBadgeStyles: Record<Severity, string> = {
 
 export const incidentStatusBadgeStyles: Record<Status, string> = {
   open: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  acknowledged: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
   investigating: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
   resolved: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
 }
@@ -51,10 +53,13 @@ export const incidentTimelineIconStyles: Record<
   { icon: LucideIcon; className: string }
 > = {
   created: { icon: AlertTriangle, className: 'text-muted-foreground' },
+  acknowledged: { icon: CheckCircle2, className: 'text-amber-400' },
   updated: { icon: Clock, className: 'text-primary' },
   assigned: { icon: User, className: 'text-blue-400' },
   escalated: { icon: ArrowUpCircle, className: 'text-orange-400' },
+  severity_changed: { icon: ArrowUpCircle, className: 'text-orange-400' },
   resolved: { icon: CheckCircle, className: 'text-emerald-400' },
+  reopened: { icon: RotateCcw, className: 'text-blue-400' },
   comment: { icon: MessageSquare, className: 'text-muted-foreground' },
 }
 

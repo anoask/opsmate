@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low'
-export type Status = 'open' | 'investigating' | 'resolved'
+export type Status = 'open' | 'acknowledged' | 'investigating' | 'resolved'
 export type IncidentCategory =
   | 'application'
   | 'database'
@@ -11,10 +11,13 @@ export type IncidentCategory =
 
 export type IncidentTimelineEventType =
   | 'created'
+  | 'acknowledged'
   | 'updated'
   | 'assigned'
   | 'escalated'
+  | 'severity_changed'
   | 'resolved'
+  | 'reopened'
   | 'comment'
 
 export interface IncidentTimelineEvent {

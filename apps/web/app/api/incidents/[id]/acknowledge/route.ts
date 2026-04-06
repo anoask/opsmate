@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { handleIncidentRouteError } from '@/lib/server/incidents/http'
-import { resolveIncidentById } from '@/lib/server/incidents/service'
+import { acknowledgeIncidentById } from '@/lib/server/incidents/service'
 import {
   incidentLifecycleActionInputSchema,
   incidentRouteParamsSchema,
@@ -9,7 +9,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-interface ResolveIncidentRouteContext {
+interface AcknowledgeIncidentRouteContext {
   params: Promise<{
     id: string
   }>
@@ -17,7 +17,7 @@ interface ResolveIncidentRouteContext {
 
 export async function PATCH(
   request: Request,
-  context: ResolveIncidentRouteContext,
+  context: AcknowledgeIncidentRouteContext,
 ) {
   try {
     const params = incidentRouteParamsSchema.parse(await context.params)
@@ -25,13 +25,13 @@ export async function PATCH(
       await request.json().catch(() => ({})),
     )
 
-    return NextResponse.json(resolveIncidentById(params.id, body))
+    return NextResponse.json(acknowledgeIncidentById(params.id, body))
   } catch (error) {
     return handleIncidentRouteError(error, {
-      invalidRequestCode: 'INCIDENT_RESOLVE_REQUEST_INVALID',
-      invalidRequestMessage: 'Resolve request parameters are invalid.',
-      internalErrorCode: 'INCIDENT_RESOLVE_FAILED',
-      internalErrorMessage: 'Unable to resolve the requested incident.',
+      invalidRequestCode: 'INCIDENT_ACKNOWLEDGE_REQUEST_INVALID',
+      invalidRequestMessage: 'Acknowledge request is invalid.',
+      internalErrorCode: 'INCIDENT_ACKNOWLEDGE_FAILED',
+      internalErrorMessage: 'Unable to acknowledge the requested incident.',
     })
   }
 }

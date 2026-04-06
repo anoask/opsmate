@@ -38,6 +38,14 @@ export const INCIDENTS_FALLBACK_MESSAGE =
 
 export const INCIDENT_RESOLVE_FALLBACK_MESSAGE =
   'Live incident service is unavailable. Incident was resolved locally in demo mode.'
+export const INCIDENT_ACKNOWLEDGE_FALLBACK_MESSAGE =
+  'Live incident service is unavailable. Incident was acknowledged locally in demo mode.'
+export const INCIDENT_ASSIGN_FALLBACK_MESSAGE =
+  'Live incident service is unavailable. Incident assignment was updated locally in demo mode.'
+export const INCIDENT_REOPEN_FALLBACK_MESSAGE =
+  'Live incident service is unavailable. Incident was reopened locally in demo mode.'
+export const INCIDENT_NOTE_FALLBACK_MESSAGE =
+  'Live incident service is unavailable. Note was added locally in demo mode.'
 
 class IncidentsApiError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -59,7 +67,7 @@ type IncidentApiResponse = Partial<
 
 const DEFAULT_INCIDENT_CATEGORY: IncidentCategory = 'application'
 const VALID_SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low']
-const VALID_STATUSES: Status[] = ['open', 'investigating', 'resolved']
+const VALID_STATUSES: Status[] = ['open', 'acknowledged', 'investigating', 'resolved']
 const VALID_INCIDENT_CATEGORIES: IncidentCategory[] = [
   'application',
   'database',
@@ -280,32 +288,191 @@ function getMockIncidentById(id: string) {
   return incident ? cloneIncident(incident) : null
 }
 
-function createLocallyResolvedIncident(incident: Incident): Incident {
-  if (incident.status === 'resolved') {
-    return cloneIncident(incident)
+function createLocalNote(incidentId: string, actor: string, content: string, now: Date) {
+  return {
+    id: `note-${incidentId}-${now.getTime()}`,
+    user: actor,
+    timestamp: now.toLocaleTimeString([], {
+      hour: '2-digit',
+      hour12: false,
+      minute: '2-digit',
+    }),
+    content,
+  } satisfies IncidentNote
+}
+
+function createLocalTimelineEvent(
+  incidentId: string,
+  actor: string,
+  eventType: IncidentTimelineEvent['type'],
+  description: string,
+  now: Date,
+) {
+  return {
+    id: `${eventType}-${incidentId}-${now.getTime()}`,
+    timestamp: now.toLocaleTimeString([], {
+      hour: '2-digit',
+      hour12: false,
+      minute: '2-digit',
+    }),
+    type: eventType,
+    description,
+    user: actor,
+  } satisfies IncidentTimelineEvent
+}
+
+function applyLocalIncidentMutation(options: {
+  incident: Incident
+  actor: string
+  eventType: IncidentTimelineEvent['type']
+  eventDescription: string
+  nextStatus?: Status
+  nextResolvedAt?: string | null
+  nextAssignedTo?: string | null
+  noteContent?: string
+}) {
+  const now = new Date()
+  const nextIncident = cloneIncident(options.incident)
+  const lifecycleEvent = createLocalTimelineEvent(
+    options.incident.id,
+    options.actor,
+    options.eventType,
+    options.eventDescription,
+    now,
+  )
+
+  nextIncident.status = options.nextStatus ?? nextIncident.status
+  nextIncident.updatedAt = 'Just now'
+  nextIncident.resolvedAt =
+    options.nextResolvedAt === undefined
+      ? nextIncident.resolvedAt
+      : options.nextResolvedAt
+  nextIncident.assignedTo =
+    options.nextAssignedTo === undefined
+      ? nextIncident.assignedTo
+      : options.nextAssignedTo
+  nextIncident.timeline = [...nextIncident.timeline, lifecycleEvent]
+
+  if (options.noteContent) {
+    const note = createLocalNote(
+      options.incident.id,
+      options.actor,
+      options.noteContent,
+      now,
+    )
+    const commentEvent = createLocalTimelineEvent(
+      options.incident.id,
+      options.actor,
+      'comment',
+      'Added a note',
+      now,
+    )
+
+    nextIncident.notes = [...nextIncident.notes, note]
+    nextIncident.timeline = [...nextIncident.timeline, commentEvent]
   }
 
+  return nextIncident
+}
+
+function createLocallyAcknowledgedIncident(
+  incident: Incident,
+  actor: string,
+  noteContent?: string,
+) {
+  return applyLocalIncidentMutation({
+    incident,
+    actor,
+    eventDescription: 'Incident acknowledged',
+    eventType: 'acknowledged',
+    nextStatus: 'acknowledged',
+    noteContent,
+  })
+}
+
+function createLocallyResolvedIncident(
+  incident: Incident,
+  actor: string,
+  noteContent?: string,
+) {
+  return applyLocalIncidentMutation({
+    incident,
+    actor,
+    eventDescription: 'Incident resolved from OpsMate',
+    eventType: 'resolved',
+    nextResolvedAt: new Date().toISOString(),
+    nextStatus: 'resolved',
+    noteContent,
+  })
+}
+
+function createLocallyReopenedIncident(
+  incident: Incident,
+  actor: string,
+  noteContent?: string,
+) {
+  return applyLocalIncidentMutation({
+    incident,
+    actor,
+    eventDescription: 'Incident reopened',
+    eventType: 'reopened',
+    nextResolvedAt: null,
+    nextStatus: 'acknowledged',
+    noteContent,
+  })
+}
+
+function createLocallyAssignedIncident(
+  incident: Incident,
+  actor: string,
+  assignee: string,
+) {
+  return applyLocalIncidentMutation({
+    incident,
+    actor,
+    eventDescription: incident.assignedTo
+      ? `Reassigned incident to ${assignee}`
+      : `Assigned incident to ${assignee}`,
+    eventType: 'assigned',
+    nextAssignedTo: assignee,
+  })
+}
+
+function assertLocalAssignmentAllowed(incident: Incident, assignee: string) {
+  if (incident.status === 'resolved') {
+    throw new IncidentsApiError('Resolved incidents cannot be reassigned.', 409)
+  }
+
+  if (incident.assignedTo === assignee) {
+    throw new IncidentsApiError(
+      `Incident is already assigned to ${assignee}.`,
+      409,
+    )
+  }
+}
+
+function createLocallyAnnotatedIncident(
+  incident: Incident,
+  author: string,
+  content: string,
+) {
   const now = new Date()
-  const resolvedAt = now.toISOString()
+  const note = createLocalNote(incident.id, author, content, now)
+  const commentEvent = createLocalTimelineEvent(
+    incident.id,
+    author,
+    'comment',
+    'Added a note',
+    now,
+  )
 
   return {
     ...cloneIncident(incident),
-    status: 'resolved',
     updatedAt: 'Just now',
-    resolvedAt,
+    notes: [...incident.notes.map((noteItem) => ({ ...noteItem })), note],
     timeline: [
       ...incident.timeline.map((event) => ({ ...event })),
-      {
-        id: `resolved-${incident.id}-${now.getTime()}`,
-        timestamp: now.toLocaleTimeString([], {
-          hour: '2-digit',
-          hour12: false,
-          minute: '2-digit',
-        }),
-        type: 'resolved',
-        description: 'Incident resolved from OpsMate',
-        user: 'OpsMate',
-      },
+      commentEvent,
     ],
   }
 }
@@ -334,8 +501,72 @@ export async function getIncident(id: string): Promise<Incident> {
 }
 
 export async function resolveIncident(id: string): Promise<Incident | null> {
+  return resolveIncidentAction(id, { actor: 'OpsMate' })
+}
+
+async function resolveIncidentAction(
+  id: string,
+  payload: { actor: string; note?: string },
+): Promise<Incident | null> {
   const incident = await requestJson<IncidentApiResponse>(`/${id}/resolve`, {
     method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+
+  return incident
+    ? normalizeIncident(incident, getMockIncidentById(id) ?? undefined)
+    : null
+}
+
+export async function acknowledgeIncident(
+  id: string,
+  payload: { actor: string; note?: string },
+): Promise<Incident | null> {
+  const incident = await requestJson<IncidentApiResponse>(`/${id}/acknowledge`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+
+  return incident
+    ? normalizeIncident(incident, getMockIncidentById(id) ?? undefined)
+    : null
+}
+
+export async function reopenIncident(
+  id: string,
+  payload: { actor: string; note?: string },
+): Promise<Incident | null> {
+  const incident = await requestJson<IncidentApiResponse>(`/${id}/reopen`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+
+  return incident
+    ? normalizeIncident(incident, getMockIncidentById(id) ?? undefined)
+    : null
+}
+
+export async function addIncidentNote(
+  id: string,
+  payload: { author: string; content: string },
+): Promise<Incident | null> {
+  const incident = await requestJson<IncidentApiResponse>(`/${id}/notes`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+
+  return incident
+    ? normalizeIncident(incident, getMockIncidentById(id) ?? undefined)
+    : null
+}
+
+export async function assignIncident(
+  id: string,
+  payload: { actor: string; assignee: string },
+): Promise<Incident | null> {
+  const incident = await requestJson<IncidentApiResponse>(`/${id}/assign`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
   })
 
   return incident
@@ -390,9 +621,10 @@ export async function loadIncident(
 
 export async function resolveIncidentWithFallback(
   incident: Incident,
+  payload: { actor: string; note?: string } = { actor: 'OpsMate' },
 ): Promise<IncidentResult> {
   try {
-    const updatedIncident = await resolveIncident(incident.id)
+    const updatedIncident = await resolveIncidentAction(incident.id, payload)
 
     if (updatedIncident) {
       return {
@@ -407,9 +639,135 @@ export async function resolveIncidentWithFallback(
     }
   } catch {
     return {
-      incident: createLocallyResolvedIncident(incident),
+      incident: createLocallyResolvedIncident(incident, payload.actor, payload.note),
       source: 'mock',
       warning: INCIDENT_RESOLVE_FALLBACK_MESSAGE,
+    }
+  }
+}
+
+export async function acknowledgeIncidentWithFallback(
+  incident: Incident,
+  payload: { actor: string; note?: string },
+): Promise<IncidentResult> {
+  try {
+    const updatedIncident = await acknowledgeIncident(incident.id, payload)
+
+    if (updatedIncident) {
+      return {
+        incident: updatedIncident,
+        source: 'backend',
+      }
+    }
+
+    return {
+      incident: await getIncident(incident.id),
+      source: 'backend',
+    }
+  } catch {
+    return {
+      incident: createLocallyAcknowledgedIncident(
+        incident,
+        payload.actor,
+        payload.note,
+      ),
+      source: 'mock',
+      warning: INCIDENT_ACKNOWLEDGE_FALLBACK_MESSAGE,
+    }
+  }
+}
+
+export async function assignIncidentWithFallback(
+  incident: Incident,
+  payload: { actor: string; assignee: string },
+): Promise<IncidentResult> {
+  try {
+    const updatedIncident = await assignIncident(incident.id, payload)
+
+    if (updatedIncident) {
+      return {
+        incident: updatedIncident,
+        source: 'backend',
+      }
+    }
+
+    return {
+      incident: await getIncident(incident.id),
+      source: 'backend',
+    }
+  } catch (error) {
+    if (error instanceof IncidentsApiError && error.status !== undefined) {
+      throw error
+    }
+
+    assertLocalAssignmentAllowed(incident, payload.assignee)
+
+    return {
+      incident: createLocallyAssignedIncident(
+        incident,
+        payload.actor,
+        payload.assignee,
+      ),
+      source: 'mock',
+      warning: INCIDENT_ASSIGN_FALLBACK_MESSAGE,
+    }
+  }
+}
+
+export async function reopenIncidentWithFallback(
+  incident: Incident,
+  payload: { actor: string; note?: string },
+): Promise<IncidentResult> {
+  try {
+    const updatedIncident = await reopenIncident(incident.id, payload)
+
+    if (updatedIncident) {
+      return {
+        incident: updatedIncident,
+        source: 'backend',
+      }
+    }
+
+    return {
+      incident: await getIncident(incident.id),
+      source: 'backend',
+    }
+  } catch {
+    return {
+      incident: createLocallyReopenedIncident(incident, payload.actor, payload.note),
+      source: 'mock',
+      warning: INCIDENT_REOPEN_FALLBACK_MESSAGE,
+    }
+  }
+}
+
+export async function addIncidentNoteWithFallback(
+  incident: Incident,
+  payload: { author: string; content: string },
+): Promise<IncidentResult> {
+  try {
+    const updatedIncident = await addIncidentNote(incident.id, payload)
+
+    if (updatedIncident) {
+      return {
+        incident: updatedIncident,
+        source: 'backend',
+      }
+    }
+
+    return {
+      incident: await getIncident(incident.id),
+      source: 'backend',
+    }
+  } catch {
+    return {
+      incident: createLocallyAnnotatedIncident(
+        incident,
+        payload.author,
+        payload.content,
+      ),
+      source: 'mock',
+      warning: INCIDENT_NOTE_FALLBACK_MESSAGE,
     }
   }
 }

@@ -22,15 +22,19 @@ export const incidentCategorySchema: z.ZodType<IncidentCategory> = z.enum([
 ])
 export const incidentStatusSchema: z.ZodType<Status> = z.enum([
   'open',
+  'acknowledged',
   'investigating',
   'resolved',
 ])
 export const incidentTimelineEventTypeSchema = z.enum([
   'created',
+  'acknowledged',
   'updated',
   'assigned',
   'escalated',
+  'severity_changed',
   'resolved',
+  'reopened',
   'comment',
 ])
 
@@ -96,8 +100,30 @@ export const incidentRouteParamsSchema = z.object({
   id: z.string().trim().min(1),
 })
 
+export const incidentLifecycleActionInputSchema = z.object({
+  actor: z.string().trim().min(1).default('OpsMate'),
+  note: z.string().trim().min(1).optional(),
+})
+
+export const incidentAssignInputSchema = z.object({
+  actor: z.string().trim().min(1).default('OpsMate'),
+  assignee: z.string().trim().min(1),
+})
+
+export const incidentNoteCreateInputSchema = z.object({
+  author: z.string().trim().min(1).default('OpsMate'),
+  content: z.string().trim().min(1),
+})
+
 export type IncidentDto = Incident
 export type IncidentListQuery = {
   range?: AnalyticsDateRange
 }
 export type IncidentRouteParams = z.infer<typeof incidentRouteParamsSchema>
+export type IncidentLifecycleActionInput = z.infer<
+  typeof incidentLifecycleActionInputSchema
+>
+export type IncidentAssignInput = z.infer<typeof incidentAssignInputSchema>
+export type IncidentNoteCreateInput = z.infer<
+  typeof incidentNoteCreateInputSchema
+>

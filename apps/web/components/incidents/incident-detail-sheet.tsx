@@ -1,11 +1,11 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import {
   AlertCircle,
   User,
   BookOpen,
   CheckCircle,
-  ArrowUpCircle,
   XCircle,
 } from "lucide-react"
 import {
@@ -17,6 +17,13 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Spinner } from "@/components/ui/spinner"
@@ -38,8 +45,17 @@ interface IncidentDetailSheetProps {
   onOpenChange: (open: boolean) => void
   isLoading?: boolean
   error?: string | null
+  isAcknowledging?: boolean
+  isAssigning?: boolean
   isResolving?: boolean
+  isReopening?: boolean
+  isAddingNote?: boolean
+  availableAssignees?: string[]
+  onAcknowledge?: () => void
+  onAssign?: (assignee: string) => void
   onResolve?: () => void
+  onReopen?: () => void
+  onAddNote?: (content: string) => void | Promise<void>
 }
 
 export function IncidentDetailSheet({
@@ -48,10 +64,53 @@ export function IncidentDetailSheet({
   onOpenChange,
   isLoading = false,
   error = null,
+  isAcknowledging = false,
+  isAssigning = false,
   isResolving = false,
+  isReopening = false,
+  isAddingNote = false,
+  availableAssignees = [],
+  onAcknowledge,
+  onAssign,
   onResolve,
+  onReopen,
+  onAddNote,
 }: IncidentDetailSheetProps) {
+  const [noteInput, setNoteInput] = useState("")
+  const [selectedAssignee, setSelectedAssignee] = useState(incident?.assignedTo ?? "")
+
+  useEffect(() => {
+    if (!open) {
+      setNoteInput("")
+    }
+  }, [open, incident?.id])
+
+  useEffect(() => {
+    setSelectedAssignee(incident?.assignedTo ?? "")
+  }, [incident?.assignedTo, incident?.id])
+
   if (!incident) return null
+
+  async function handleAddNote() {
+    const content = noteInput.trim()
+
+    if (!content || !onAddNote) {
+      return
+    }
+
+    await Promise.resolve(onAddNote(content))
+    setNoteInput("")
+  }
+
+  async function handleAssign() {
+    const assignee = selectedAssignee.trim()
+
+    if (!assignee || !onAssign) {
+      return
+    }
+
+    await Promise.resolve(onAssign(assignee))
+  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -112,10 +171,48 @@ export function IncidentDetailSheet({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground">Assigned To</p>
-                <p className="text-sm font-medium flex items-center gap-2">
-                  <User className="h-4 w-4 text-muted-foreground" />
-                  {incident.assignedTo || "Unassigned"}
-                </p>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <span>{incident.assignedTo || "Unassigned"}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Select
+                      value={selectedAssignee}
+                      onValueChange={setSelectedAssignee}
+                      disabled={isAssigning || incident.status === "resolved"}
+                    >
+                      <SelectTrigger className="h-9 bg-secondary border-border">
+                        <SelectValue placeholder="Select engineer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableAssignees.map((assignee) => (
+                          <SelectItem key={assignee} value={assignee}>
+                            {assignee}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        isAssigning ||
+                        incident.status === "resolved" ||
+                        selectedAssignee.trim().length === 0 ||
+                        selectedAssignee === (incident.assignedTo ?? "")
+                      }
+                      onClick={() => void handleAssign()}
+                    >
+                      {isAssigning
+                        ? "Saving..."
+                        : incident.assignedTo
+                          ? "Reassign"
+                          : "Assign"}
+                    </Button>
+                  </div>
+                </div>
               </div>
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground">Runbook</p>
@@ -220,11 +317,19 @@ export function IncidentDetailSheet({
               {/* Add Note */}
               <div className="space-y-2 pt-2">
                 <Textarea
-                  placeholder="Add a note..."
+                  placeholder="Add an operational note..."
                   className="bg-secondary border-border min-h-[80px] resize-none"
+                  value={noteInput}
+                  onChange={(event) => setNoteInput(event.target.value)}
+                  disabled={isAddingNote}
                 />
-                <Button size="sm" className="w-full">
-                  Add Note
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={isAddingNote || noteInput.trim().length === 0}
+                  onClick={() => void handleAddNote()}
+                >
+                  {isAddingNote ? "Adding note..." : "Add Note"}
                 </Button>
               </div>
             </div>
@@ -233,6 +338,17 @@ export function IncidentDetailSheet({
 
             {/* Actions */}
             <div className="flex gap-2">
+              {incident.status === "open" && (
+                <Button
+                  className="flex-1"
+                  variant="outline"
+                  disabled={isAcknowledging}
+                  onClick={onAcknowledge}
+                >
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  {isAcknowledging ? "Acknowledging..." : "Acknowledge"}
+                </Button>
+              )}
               {incident.status !== "resolved" && (
                 <>
                   <Button
@@ -244,16 +360,17 @@ export function IncidentDetailSheet({
                     <CheckCircle className="mr-2 h-4 w-4" />
                     {isResolving ? "Resolving..." : "Resolve"}
                   </Button>
-                  <Button className="flex-1" variant="outline">
-                    <ArrowUpCircle className="mr-2 h-4 w-4" />
-                    Escalate
-                  </Button>
                 </>
               )}
               {incident.status === "resolved" && (
-                <Button className="flex-1" variant="outline">
+                <Button
+                  className="flex-1"
+                  variant="outline"
+                  disabled={isReopening}
+                  onClick={onReopen}
+                >
                   <XCircle className="mr-2 h-4 w-4" />
-                  Reopen
+                  {isReopening ? "Reopening..." : "Reopen"}
                 </Button>
               )}
             </div>

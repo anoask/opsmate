@@ -12,14 +12,20 @@ import { IncidentsFullTable } from "@/components/incidents/incidents-full-table"
 import { IncidentDetailSheet } from "@/components/incidents/incident-detail-sheet"
 import { Spinner } from "@/components/ui/spinner"
 import {
+  acknowledgeIncidentWithFallback,
+  assignIncidentWithFallback,
+  addIncidentNoteWithFallback,
   type IncidentsDataSource,
   loadIncident,
   loadIncidents,
+  reopenIncidentWithFallback,
   resolveIncidentWithFallback,
 } from "@/lib/api/incidents"
+import { teamMembers } from "@/lib/mock-data"
 import type { Incident } from "@/lib/types"
 
 export default function IncidentsPage() {
+  const incidentActor = "OpsMate"
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -33,7 +39,16 @@ export default function IncidentsPage() {
   const [dataSource, setDataSource] = useState<IncidentsDataSource>("backend")
   const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
-  const [isResolving, setIsResolving] = useState(false)
+  const [activeMutation, setActiveMutation] = useState<
+    "acknowledge" | "assign" | "resolve" | "reopen" | "note" | null
+  >(null)
+  const availableAssignees = useMemo(
+    () =>
+      teamMembers
+        .filter((member) => member.status === "active")
+        .map((member) => member.name),
+    [],
+  )
 
   const refreshIncidents = useCallback(async () => {
     setIsInitialLoading(true)
@@ -121,11 +136,13 @@ export default function IncidentsPage() {
       return
     }
 
-    setIsResolving(true)
+    setActiveMutation("resolve")
     setDetailError(null)
 
     try {
-      const result = await resolveIncidentWithFallback(selectedIncident)
+      const result = await resolveIncidentWithFallback(selectedIncident, {
+        actor: incidentActor,
+      })
 
       setSelectedIncident(result.incident)
       setIncidents((currentIncidents) =>
@@ -142,7 +159,138 @@ export default function IncidentsPage() {
     } catch {
       setDetailError("Unable to resolve the incident right now. Please try again.")
     } finally {
-      setIsResolving(false)
+      setActiveMutation(null)
+    }
+  }
+
+  const handleAcknowledgeIncident = async () => {
+    if (!selectedIncident) {
+      return
+    }
+
+    setActiveMutation("acknowledge")
+    setDetailError(null)
+
+    try {
+      const result = await acknowledgeIncidentWithFallback(selectedIncident, {
+        actor: incidentActor,
+      })
+
+      setSelectedIncident(result.incident)
+      setIncidents((currentIncidents) =>
+        currentIncidents.map((incident) =>
+          incident.id === result.incident.id ? result.incident : incident,
+        ),
+      )
+
+      if (result.warning) {
+        setDataSource("mock")
+        setLoadWarning(result.warning)
+        setDetailError("Incident was acknowledged locally using demo data.")
+      }
+    } catch {
+      setDetailError("Unable to acknowledge the incident right now. Please try again.")
+    } finally {
+      setActiveMutation(null)
+    }
+  }
+
+  const handleReopenIncident = async () => {
+    if (!selectedIncident) {
+      return
+    }
+
+    setActiveMutation("reopen")
+    setDetailError(null)
+
+    try {
+      const result = await reopenIncidentWithFallback(selectedIncident, {
+        actor: incidentActor,
+      })
+
+      setSelectedIncident(result.incident)
+      setIncidents((currentIncidents) =>
+        currentIncidents.map((incident) =>
+          incident.id === result.incident.id ? result.incident : incident,
+        ),
+      )
+
+      if (result.warning) {
+        setDataSource("mock")
+        setLoadWarning(result.warning)
+        setDetailError("Incident was reopened locally using demo data.")
+      }
+    } catch {
+      setDetailError("Unable to reopen the incident right now. Please try again.")
+    } finally {
+      setActiveMutation(null)
+    }
+  }
+
+  const handleAssignIncident = async (assignee: string) => {
+    if (!selectedIncident) {
+      return
+    }
+
+    setActiveMutation("assign")
+    setDetailError(null)
+
+    try {
+      const result = await assignIncidentWithFallback(selectedIncident, {
+        actor: incidentActor,
+        assignee,
+      })
+
+      setSelectedIncident(result.incident)
+      setIncidents((currentIncidents) =>
+        currentIncidents.map((incident) =>
+          incident.id === result.incident.id ? result.incident : incident,
+        ),
+      )
+
+      if (result.warning) {
+        setDataSource("mock")
+        setLoadWarning(result.warning)
+        setDetailError("Incident assignment was updated locally using demo data.")
+      }
+    } catch {
+      setDetailError("Unable to update assignment right now. Please try again.")
+    } finally {
+      setActiveMutation(null)
+    }
+  }
+
+  const handleAddIncidentNote = async (content: string) => {
+    if (!selectedIncident) {
+      return
+    }
+
+    setActiveMutation("note")
+    setDetailError(null)
+
+    try {
+      const result = await addIncidentNoteWithFallback(selectedIncident, {
+        author: incidentActor,
+        content,
+      })
+
+      setSelectedIncident(result.incident)
+      setIncidents((currentIncidents) =>
+        currentIncidents.map((incident) =>
+          incident.id === result.incident.id ? result.incident : incident,
+        ),
+      )
+
+      if (result.warning) {
+        setDataSource("mock")
+        setLoadWarning(result.warning)
+        setDetailError("Note was added locally using demo data.")
+      }
+    } catch {
+      setDetailError("Unable to add a note right now. Please try again.")
+      throw new Error("INCIDENT_NOTE_SUBMIT_FAILED")
+    } finally {
+      setActiveMutation(null)
     }
   }
 
@@ -152,7 +300,7 @@ export default function IncidentsPage() {
     if (!open) {
       setDetailError(null)
       setIsDetailLoading(false)
-      setIsResolving(false)
+      setActiveMutation(null)
     }
   }
 
@@ -270,8 +418,17 @@ export default function IncidentsPage() {
         onOpenChange={handleSheetOpenChange}
         isLoading={isDetailLoading}
         error={detailError}
-        isResolving={isResolving}
+        isAcknowledging={activeMutation === "acknowledge"}
+        isAssigning={activeMutation === "assign"}
+        isResolving={activeMutation === "resolve"}
+        isReopening={activeMutation === "reopen"}
+        isAddingNote={activeMutation === "note"}
+        availableAssignees={availableAssignees}
+        onAcknowledge={() => void handleAcknowledgeIncident()}
+        onAssign={(assignee) => void handleAssignIncident(assignee)}
         onResolve={() => void handleResolveIncident()}
+        onReopen={() => void handleReopenIncident()}
+        onAddNote={handleAddIncidentNote}
       />
     </AppShell>
   )
