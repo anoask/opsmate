@@ -15,6 +15,7 @@ import {
   acknowledgeIncidentWithFallback,
   assignIncidentWithFallback,
   addIncidentNoteWithFallback,
+  changeIncidentSeverityWithFallback,
   type IncidentsDataSource,
   loadIncident,
   loadIncidents,
@@ -22,7 +23,7 @@ import {
   resolveIncidentWithFallback,
 } from "@/lib/api/incidents"
 import { teamMembers } from "@/lib/mock-data"
-import type { Incident } from "@/lib/types"
+import type { Incident, Severity } from "@/lib/types"
 
 export default function IncidentsPage() {
   const incidentActor = "OpsMate"
@@ -40,13 +41,17 @@ export default function IncidentsPage() {
   const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [activeMutation, setActiveMutation] = useState<
-    "acknowledge" | "assign" | "resolve" | "reopen" | "note" | null
+    "acknowledge" | "assign" | "severity" | "resolve" | "reopen" | "note" | null
   >(null)
   const availableAssignees = useMemo(
     () =>
       teamMembers
         .filter((member) => member.status === "active")
         .map((member) => member.name),
+    [],
+  )
+  const availableSeverities = useMemo<Severity[]>(
+    () => ["critical", "high", "medium", "low"],
     [],
   )
 
@@ -260,6 +265,39 @@ export default function IncidentsPage() {
     }
   }
 
+  const handleChangeSeverity = async (severity: Severity) => {
+    if (!selectedIncident) {
+      return
+    }
+
+    setActiveMutation("severity")
+    setDetailError(null)
+
+    try {
+      const result = await changeIncidentSeverityWithFallback(selectedIncident, {
+        actor: incidentActor,
+        severity,
+      })
+
+      setSelectedIncident(result.incident)
+      setIncidents((currentIncidents) =>
+        currentIncidents.map((incident) =>
+          incident.id === result.incident.id ? result.incident : incident,
+        ),
+      )
+
+      if (result.warning) {
+        setDataSource("mock")
+        setLoadWarning(result.warning)
+        setDetailError("Incident severity was updated locally using demo data.")
+      }
+    } catch {
+      setDetailError("Unable to change severity right now. Please try again.")
+    } finally {
+      setActiveMutation(null)
+    }
+  }
+
   const handleAddIncidentNote = async (content: string) => {
     if (!selectedIncident) {
       return
@@ -420,12 +458,15 @@ export default function IncidentsPage() {
         error={detailError}
         isAcknowledging={activeMutation === "acknowledge"}
         isAssigning={activeMutation === "assign"}
+        isChangingSeverity={activeMutation === "severity"}
         isResolving={activeMutation === "resolve"}
         isReopening={activeMutation === "reopen"}
         isAddingNote={activeMutation === "note"}
         availableAssignees={availableAssignees}
+        availableSeverities={availableSeverities}
         onAcknowledge={() => void handleAcknowledgeIncident()}
         onAssign={(assignee) => void handleAssignIncident(assignee)}
+        onChangeSeverity={(severity) => void handleChangeSeverity(severity)}
         onResolve={() => void handleResolveIncident()}
         onReopen={() => void handleReopenIncident()}
         onAddNote={handleAddIncidentNote}

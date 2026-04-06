@@ -423,17 +423,19 @@ export function commitStoredIncidentLifecycleMutation(options: {
   notes?: StoredIncidentNoteRecord[]
   expectedCurrentStatus?: IncidentDto['status']
   expectedCurrentAssignedTo?: string | null
+  expectedCurrentSeverity?: IncidentDto['severity']
 }) {
   const db = getDb()
   const parsedIncident = incidentDtoSchema.parse(options.incident)
 
   const transaction = db.transaction(() => {
     const currentRow = db
-      .prepare('SELECT status, assigned_to FROM incidents WHERE id = ?')
+      .prepare('SELECT status, assigned_to, severity FROM incidents WHERE id = ?')
       .get(parsedIncident.id) as
       | {
           status: IncidentDto['status']
           assigned_to: string | null
+          severity: IncidentDto['severity']
         }
       | undefined
 
@@ -458,6 +460,15 @@ export function commitStoredIncidentLifecycleMutation(options: {
     ) {
       throw new IncidentStateConflictError(
         `Incident ${parsedIncident.id} changed assignee before the lifecycle action could be applied.`,
+      )
+    }
+
+    if (
+      options.expectedCurrentSeverity !== undefined &&
+      currentRow.severity !== options.expectedCurrentSeverity
+    ) {
+      throw new IncidentStateConflictError(
+        `Incident ${parsedIncident.id} changed severity before the lifecycle action could be applied.`,
       )
     }
 

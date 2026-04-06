@@ -42,6 +42,8 @@ export const INCIDENT_ACKNOWLEDGE_FALLBACK_MESSAGE =
   'Live incident service is unavailable. Incident was acknowledged locally in demo mode.'
 export const INCIDENT_ASSIGN_FALLBACK_MESSAGE =
   'Live incident service is unavailable. Incident assignment was updated locally in demo mode.'
+export const INCIDENT_SEVERITY_FALLBACK_MESSAGE =
+  'Live incident service is unavailable. Incident severity was updated locally in demo mode.'
 export const INCIDENT_REOPEN_FALLBACK_MESSAGE =
   'Live incident service is unavailable. Incident was reopened locally in demo mode.'
 export const INCIDENT_NOTE_FALLBACK_MESSAGE =
@@ -75,6 +77,12 @@ const VALID_INCIDENT_CATEGORIES: IncidentCategory[] = [
   'network',
   'security',
 ]
+const severityRank: Record<Severity, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+}
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
@@ -112,6 +120,10 @@ function getValidCategory(
   }
 
   return fallback ?? DEFAULT_INCIDENT_CATEGORY
+}
+
+function formatSeverityLabel(severity: Severity) {
+  return severity.charAt(0).toUpperCase() + severity.slice(1)
 }
 
 function normalizeTimeline(
@@ -329,6 +341,7 @@ function applyLocalIncidentMutation(options: {
   nextStatus?: Status
   nextResolvedAt?: string | null
   nextAssignedTo?: string | null
+  nextSeverity?: Severity
   noteContent?: string
 }) {
   const now = new Date()
@@ -347,6 +360,10 @@ function applyLocalIncidentMutation(options: {
     options.nextResolvedAt === undefined
       ? nextIncident.resolvedAt
       : options.nextResolvedAt
+  nextIncident.severity =
+    options.nextSeverity === undefined
+      ? nextIncident.severity
+      : options.nextSeverity
   nextIncident.assignedTo =
     options.nextAssignedTo === undefined
       ? nextIncident.assignedTo
@@ -438,6 +455,22 @@ function createLocallyAssignedIncident(
   })
 }
 
+function createLocallySeverityChangedIncident(
+  incident: Incident,
+  actor: string,
+  severity: Severity,
+) {
+  const isEscalation = severityRank[severity] < severityRank[incident.severity]
+
+  return applyLocalIncidentMutation({
+    incident,
+    actor,
+    eventDescription: `${isEscalation ? 'Severity escalated' : 'Severity downgraded'} from ${formatSeverityLabel(incident.severity)} to ${formatSeverityLabel(severity)}`,
+    eventType: 'severity_changed',
+    nextSeverity: severity,
+  })
+}
+
 function assertLocalAssignmentAllowed(incident: Incident, assignee: string) {
   if (incident.status === 'resolved') {
     throw new IncidentsApiError('Resolved incidents cannot be reassigned.', 409)
@@ -446,6 +479,19 @@ function assertLocalAssignmentAllowed(incident: Incident, assignee: string) {
   if (incident.assignedTo === assignee) {
     throw new IncidentsApiError(
       `Incident is already assigned to ${assignee}.`,
+      409,
+    )
+  }
+}
+
+function assertLocalSeverityChangeAllowed(incident: Incident, severity: Severity) {
+  if (incident.status === 'resolved') {
+    throw new IncidentsApiError('Resolved incidents cannot change severity.', 409)
+  }
+
+  if (incident.severity === severity) {
+    throw new IncidentsApiError(
+      `Incident is already ${severity} severity.`,
       409,
     )
   }
@@ -565,6 +611,20 @@ export async function assignIncident(
   payload: { actor: string; assignee: string },
 ): Promise<Incident | null> {
   const incident = await requestJson<IncidentApiResponse>(`/${id}/assign`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+
+  return incident
+    ? normalizeIncident(incident, getMockIncidentById(id) ?? undefined)
+    : null
+}
+
+export async function changeIncidentSeverity(
+  id: string,
+  payload: { actor: string; severity: Severity },
+): Promise<Incident | null> {
+  const incident = await requestJson<IncidentApiResponse>(`/${id}/severity`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   })
@@ -737,6 +797,43 @@ export async function reopenIncidentWithFallback(
       incident: createLocallyReopenedIncident(incident, payload.actor, payload.note),
       source: 'mock',
       warning: INCIDENT_REOPEN_FALLBACK_MESSAGE,
+    }
+  }
+}
+
+export async function changeIncidentSeverityWithFallback(
+  incident: Incident,
+  payload: { actor: string; severity: Severity },
+): Promise<IncidentResult> {
+  try {
+    const updatedIncident = await changeIncidentSeverity(incident.id, payload)
+
+    if (updatedIncident) {
+      return {
+        incident: updatedIncident,
+        source: 'backend',
+      }
+    }
+
+    return {
+      incident: await getIncident(incident.id),
+      source: 'backend',
+    }
+  } catch (error) {
+    if (error instanceof IncidentsApiError && error.status !== undefined) {
+      throw error
+    }
+
+    assertLocalSeverityChangeAllowed(incident, payload.severity)
+
+    return {
+      incident: createLocallySeverityChangedIncident(
+        incident,
+        payload.actor,
+        payload.severity,
+      ),
+      source: 'mock',
+      warning: INCIDENT_SEVERITY_FALLBACK_MESSAGE,
     }
   }
 }

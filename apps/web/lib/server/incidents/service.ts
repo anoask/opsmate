@@ -9,6 +9,7 @@ import {
   incidentAssignInputSchema,
   incidentLifecycleActionInputSchema,
   incidentNoteCreateInputSchema,
+  incidentSeverityChangeInputSchema,
   type IncidentAssignInput,
   type IncidentListQuery,
   incidentRouteParamsSchema,
@@ -16,6 +17,7 @@ import {
   incidentsListDtoSchema,
   type IncidentLifecycleActionInput,
   type IncidentNoteCreateInput,
+  type IncidentSeverityChangeInput,
   type IncidentDto,
 } from '@/lib/server/incidents/schema'
 
@@ -46,6 +48,17 @@ function formatTimelineTimestamp(date: Date) {
     hour12: false,
     minute: '2-digit',
   })
+}
+
+const severityRank: Record<IncidentDto['severity'], number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+}
+
+function formatSeverityLabel(severity: IncidentDto['severity']) {
+  return severity.charAt(0).toUpperCase() + severity.slice(1)
 }
 
 function buildTimelineEvent(
@@ -116,6 +129,7 @@ function persistLifecycleMutation(
     primaryTransitionEventId?: string
     expectedCurrentStatus?: IncidentDto['status']
     expectedCurrentAssignedTo?: string | null
+    expectedCurrentSeverity?: IncidentDto['severity']
     fromStatus?: IncidentDto['status'] | null
     toStatus?: IncidentDto['status'] | null
     fromSeverity?: IncidentDto['severity'] | null
@@ -129,6 +143,7 @@ function persistLifecycleMutation(
       incident,
       expectedCurrentStatus: options.expectedCurrentStatus,
       expectedCurrentAssignedTo: options.expectedCurrentAssignedTo,
+      expectedCurrentSeverity: options.expectedCurrentSeverity,
       events: options.events.map((event) => {
         const isPrimaryTransition = event.id === options.primaryTransitionEventId
 
@@ -301,6 +316,47 @@ function createResolvedIncident(
   }
 }
 
+function createSeverityChangedIncident(
+  incident: IncidentDto,
+  input: IncidentSeverityChangeInput,
+) {
+  if (incident.status === 'resolved') {
+    throw new IncidentLifecycleError('Resolved incidents cannot change severity.')
+  }
+
+  if (incident.severity === input.severity) {
+    throw new IncidentLifecycleError(
+      `Incident is already ${input.severity} severity.`,
+    )
+  }
+
+  const now = new Date()
+  const isEscalation = severityRank[input.severity] < severityRank[incident.severity]
+  const event = buildTimelineEvent(
+    incident.id,
+    'severity_changed',
+    `${isEscalation ? 'Severity escalated' : 'Severity downgraded'} from ${formatSeverityLabel(incident.severity)} to ${formatSeverityLabel(input.severity)}`,
+    input.actor,
+    now,
+  )
+
+  return {
+    incident: {
+      ...incident,
+      severity: input.severity,
+      updatedAt: 'Just now',
+      timeline: [...incident.timeline, event],
+    } satisfies IncidentDto,
+    events: [event] as LifecycleTimelineEvent[],
+    notes: [] as LifecycleNote[],
+    primaryTransitionEventId: event.id,
+    expectedCurrentStatus: incident.status,
+    expectedCurrentSeverity: incident.severity,
+    fromSeverity: incident.severity,
+    toSeverity: input.severity,
+  }
+}
+
 function createReopenedIncident(
   incident: IncidentDto,
   input: IncidentLifecycleActionInput,
@@ -366,6 +422,8 @@ export function acknowledgeIncidentById(
     events: mutation.events,
     notes: mutation.notes,
     primaryTransitionEventId: mutation.primaryTransitionEventId,
+    expectedCurrentStatus: mutation.expectedCurrentStatus,
+    expectedCurrentSeverity: incident.severity,
     fromStatus: mutation.fromStatus,
     toStatus: mutation.toStatus,
   })
@@ -382,8 +440,28 @@ export function assignIncidentById(id: string, input: IncidentAssignInput) {
     primaryTransitionEventId: mutation.primaryTransitionEventId,
     expectedCurrentStatus: mutation.expectedCurrentStatus,
     expectedCurrentAssignedTo: mutation.expectedCurrentAssignedTo,
+    expectedCurrentSeverity: incident.severity,
     fromAssignedTo: mutation.fromAssignedTo,
     toAssignedTo: mutation.toAssignedTo,
+  })
+}
+
+export function changeIncidentSeverityById(
+  id: string,
+  input: IncidentSeverityChangeInput,
+) {
+  const incident = getIncidentById(id)
+  const parsedInput = incidentSeverityChangeInputSchema.parse(input)
+  const mutation = createSeverityChangedIncident(incident, parsedInput)
+
+  return persistLifecycleMutation(mutation.incident, {
+    events: mutation.events,
+    notes: mutation.notes,
+    primaryTransitionEventId: mutation.primaryTransitionEventId,
+    expectedCurrentStatus: mutation.expectedCurrentStatus,
+    expectedCurrentSeverity: mutation.expectedCurrentSeverity,
+    fromSeverity: mutation.fromSeverity,
+    toSeverity: mutation.toSeverity,
   })
 }
 
@@ -403,6 +481,8 @@ export function resolveIncidentById(
     events: mutation.events,
     notes: mutation.notes,
     primaryTransitionEventId: mutation.primaryTransitionEventId,
+    expectedCurrentStatus: incident.status,
+    expectedCurrentSeverity: incident.severity,
     fromStatus: mutation.fromStatus,
     toStatus: mutation.toStatus,
   })
@@ -420,6 +500,8 @@ export function reopenIncidentById(
     events: mutation.events,
     notes: mutation.notes,
     primaryTransitionEventId: mutation.primaryTransitionEventId,
+    expectedCurrentStatus: mutation.expectedCurrentStatus,
+    expectedCurrentSeverity: incident.severity,
     fromStatus: mutation.fromStatus,
     toStatus: mutation.toStatus,
   })
@@ -441,5 +523,7 @@ export function addIncidentNoteById(
   return persistLifecycleMutation(commentMutation.incident, {
     events: commentMutation.events,
     notes: commentMutation.notes,
+    expectedCurrentStatus: incident.status,
+    expectedCurrentSeverity: incident.severity,
   })
 }

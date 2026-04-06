@@ -110,6 +110,11 @@ export const incidentAssignInputSchema = z.object({
   assignee: z.string().trim().min(1),
 })
 
+export const incidentSeverityChangeInputSchema = z.object({
+  actor: z.string().trim().min(1).default('OpsMate'),
+  severity: severitySchema,
+})
+
 export const incidentNoteCreateInputSchema = z.object({
   author: z.string().trim().min(1).default('OpsMate'),
   content: z.string().trim().min(1),
@@ -124,6 +129,9 @@ export type IncidentLifecycleActionInput = z.infer<
   typeof incidentLifecycleActionInputSchema
 >
 export type IncidentAssignInput = z.infer<typeof incidentAssignInputSchema>
+export type IncidentSeverityChangeInput = z.infer<
+  typeof incidentSeverityChangeInputSchema
+>
 export type IncidentNoteCreateInput = z.infer<
   typeof incidentNoteCreateInputSchema
 >

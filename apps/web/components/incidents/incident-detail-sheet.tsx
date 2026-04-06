@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import {
   AlertCircle,
   User,
@@ -33,10 +33,14 @@ import {
   incidentStatusBadgeStyles,
   incidentTimelineIconStyles,
 } from "@/lib/presentation"
-import type { Incident } from "@/lib/types"
+import type { Incident, Severity } from "@/lib/types"
 
 function formatCategoryLabel(category: Incident["category"]) {
   return category.charAt(0).toUpperCase() + category.slice(1)
+}
+
+function formatSeverityLabel(severity: Severity) {
+  return severity.charAt(0).toUpperCase() + severity.slice(1)
 }
 
 interface IncidentDetailSheetProps {
@@ -47,12 +51,15 @@ interface IncidentDetailSheetProps {
   error?: string | null
   isAcknowledging?: boolean
   isAssigning?: boolean
+  isChangingSeverity?: boolean
   isResolving?: boolean
   isReopening?: boolean
   isAddingNote?: boolean
   availableAssignees?: string[]
+  availableSeverities?: Severity[]
   onAcknowledge?: () => void
   onAssign?: (assignee: string) => void
+  onChangeSeverity?: (severity: Severity) => void
   onResolve?: () => void
   onReopen?: () => void
   onAddNote?: (content: string) => void | Promise<void>
@@ -66,28 +73,24 @@ export function IncidentDetailSheet({
   error = null,
   isAcknowledging = false,
   isAssigning = false,
+  isChangingSeverity = false,
   isResolving = false,
   isReopening = false,
   isAddingNote = false,
   availableAssignees = [],
+  availableSeverities = [],
   onAcknowledge,
   onAssign,
+  onChangeSeverity,
   onResolve,
   onReopen,
   onAddNote,
 }: IncidentDetailSheetProps) {
   const [noteInput, setNoteInput] = useState("")
   const [selectedAssignee, setSelectedAssignee] = useState(incident?.assignedTo ?? "")
-
-  useEffect(() => {
-    if (!open) {
-      setNoteInput("")
-    }
-  }, [open, incident?.id])
-
-  useEffect(() => {
-    setSelectedAssignee(incident?.assignedTo ?? "")
-  }, [incident?.assignedTo, incident?.id])
+  const [selectedSeverity, setSelectedSeverity] = useState<Severity>(
+    incident?.severity ?? "medium",
+  )
 
   if (!incident) return null
 
@@ -112,9 +115,20 @@ export function IncidentDetailSheet({
     await Promise.resolve(onAssign(assignee))
   }
 
+  async function handleChangeSeverity() {
+    if (!onChangeSeverity || !selectedSeverity) {
+      return
+    }
+
+    await Promise.resolve(onChangeSeverity(selectedSeverity))
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-xl bg-card border-border">
+      <SheetContent
+        key={`${incident.id}-${incident.severity}-${open ? "open" : "closed"}`}
+        className="w-full sm:max-w-xl bg-card border-border"
+      >
         <SheetHeader className="space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
@@ -220,6 +234,48 @@ export function IncidentDetailSheet({
                   <BookOpen className="h-4 w-4 text-muted-foreground" />
                   {incident.assignedRunbook || "None"}
                 </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Severity</p>
+                <div className="space-y-2">
+                  <Badge
+                    variant="outline"
+                    className={incidentSeverityBadgeStyles[incident.severity]}
+                  >
+                    {incident.severity}
+                  </Badge>
+                  <div className="flex gap-2">
+                    <Select
+                      value={selectedSeverity}
+                      onValueChange={(value) => setSelectedSeverity(value as Severity)}
+                      disabled={isChangingSeverity || incident.status === "resolved"}
+                    >
+                      <SelectTrigger className="h-9 bg-secondary border-border">
+                        <SelectValue placeholder="Select severity" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableSeverities.map((severity) => (
+                          <SelectItem key={severity} value={severity}>
+                            {formatSeverityLabel(severity)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        isChangingSeverity ||
+                        incident.status === "resolved" ||
+                        selectedSeverity === incident.severity
+                      }
+                      onClick={() => void handleChangeSeverity()}
+                    >
+                      {isChangingSeverity ? "Updating..." : "Update Severity"}
+                    </Button>
+                  </div>
+                </div>
               </div>
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground">Created</p>
