@@ -1,9 +1,9 @@
-import { incidents as mockIncidents } from '@/lib/mock-data'
 import {
   isIncidentInDateRange,
   type AnalyticsDateRange,
 } from '@/lib/analytics/date-range'
 import { buildApiUrl } from '@/lib/config'
+import { getCurrentDemoIncidents } from '@/lib/demo-incidents'
 import type {
   Incident,
   IncidentCategory,
@@ -275,6 +275,7 @@ function filterIncidentsByRange(
 }
 
 function getMockIncidentById(id: string) {
+  const mockIncidents = getCurrentDemoIncidents()
   const incident = mockIncidents.find((item) => item.id === id)
   return incident ? cloneIncident(incident) : null
 }
@@ -310,6 +311,7 @@ function createLocallyResolvedIncident(incident: Incident): Incident {
 }
 
 export async function getIncidents(options?: LoadIncidentsOptions): Promise<Incident[]> {
+  const mockIncidents = getCurrentDemoIncidents()
   const searchParams = new URLSearchParams()
 
   if (options?.range) {
@@ -344,6 +346,8 @@ export async function resolveIncident(id: string): Promise<Incident | null> {
 export async function loadIncidents(
   options?: LoadIncidentsOptions,
 ): Promise<IncidentListResult> {
+  const mockIncidents = getCurrentDemoIncidents()
+
   try {
     return {
       incidents: await getIncidents(options),

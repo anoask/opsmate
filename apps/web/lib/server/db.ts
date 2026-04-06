@@ -2,7 +2,9 @@ import Database from 'better-sqlite3'
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 
-import { incidents as mockIncidents, runbooks as mockRunbooks } from '@/lib/mock-data'
+import { getAnalyticsWindowStart } from '@/lib/analytics/date-range'
+import { getCurrentDemoIncidents } from '@/lib/demo-incidents'
+import { runbooks as mockRunbooks } from '@/lib/mock-data'
 import {
   incidentsListDtoSchema,
   type IncidentDto,
@@ -96,16 +98,8 @@ function createSchema(db: Database.Database) {
 }
 
 function seedIncidents(db: Database.Database) {
-  const incidentCount = db
-    .prepare('SELECT COUNT(*) as count FROM incidents')
-    .get() as { count: number }
-
-  if (incidentCount.count > 0) {
-    return
-  }
-
-  const parsedIncidents = incidentsListDtoSchema.parse(mockIncidents)
-  const insertIncident = db.prepare(`
+  const parsedIncidents = incidentsListDtoSchema.parse(getCurrentDemoIncidents())
+  const upsertIncident = db.prepare(`
     INSERT INTO incidents (
       id,
       source,
@@ -137,11 +131,25 @@ function seedIncidents(db: Database.Database) {
       @timeline_json,
       @notes_json
     )
+    ON CONFLICT(id) DO UPDATE SET
+      source = excluded.source,
+      title = excluded.title,
+      description = excluded.description,
+      severity = excluded.severity,
+      status = excluded.status,
+      category = excluded.category,
+      assigned_runbook = excluded.assigned_runbook,
+      assigned_to = excluded.assigned_to,
+      created_at = excluded.created_at,
+      updated_at = excluded.updated_at,
+      resolved_at = excluded.resolved_at,
+      timeline_json = excluded.timeline_json,
+      notes_json = excluded.notes_json
   `)
 
   const seedTransaction = db.transaction((incidents: IncidentDto[]) => {
     for (const incident of incidents) {
-      insertIncident.run({
+      upsertIncident.run({
         id: incident.id,
         source: incident.source,
         title: incident.title,
@@ -160,7 +168,32 @@ function seedIncidents(db: Database.Database) {
     }
   })
 
-  seedTransaction(parsedIncidents)
+  const existingIncidents = db
+    .prepare('SELECT id, created_at FROM incidents')
+    .all() as Array<{ id: string; created_at: string }>
+
+  if (existingIncidents.length === 0) {
+    seedTransaction(parsedIncidents)
+    return
+  }
+
+  const seedIds = new Set(parsedIncidents.map((incident) => incident.id))
+  const hasOnlySeedIncidents =
+    existingIncidents.length === seedIds.size &&
+    existingIncidents.every((incident) => seedIds.has(incident.id))
+
+  if (!hasOnlySeedIncidents) {
+    return
+  }
+
+  const latestSeedTimestamp = existingIncidents.reduce((latestTimestamp, incident) => {
+    const createdAt = new Date(incident.created_at).getTime()
+    return Number.isNaN(createdAt) ? latestTimestamp : Math.max(latestTimestamp, createdAt)
+  }, 0)
+
+  if (latestSeedTimestamp < getAnalyticsWindowStart('90d').getTime()) {
+    seedTransaction(parsedIncidents)
+  }
 }
 
 function seedRunbooks(db: Database.Database) {
