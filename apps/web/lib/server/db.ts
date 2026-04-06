@@ -390,8 +390,10 @@ function backfillIncidentLifecycleTables(
         const timeline = JSON.parse(row.timeline_json) as IncidentDto['timeline']
 
         for (const event of timeline) {
+          // Timeline mock IDs (e.g. "t1") repeat across incidents; incident_events.id is global.
+          const eventRowId = `legacy_evt_${row.id}_${event.id}`
           insertEvent.run({
-            id: event.id,
+            id: eventRowId,
             incident_id: row.id,
             type: event.type,
             actor: event.user ?? null,
@@ -412,8 +414,9 @@ function backfillIncidentLifecycleTables(
         const notes = JSON.parse(row.notes_json) as IncidentDto['notes']
 
         for (const note of notes) {
+          const noteRowId = `legacy_note_${row.id}_${note.id}`
           insertNote.run({
-            id: note.id,
+            id: noteRowId,
             incident_id: row.id,
             author: note.user,
             content: note.content,
