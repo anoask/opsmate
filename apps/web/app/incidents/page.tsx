@@ -26,7 +26,7 @@ import { teamMembers } from "@/lib/mock-data"
 import type { Incident, Severity } from "@/lib/types"
 
 export default function IncidentsPage() {
-  const incidentActor = "OpsMate"
+  const incidentActor = "OpsMate Bot"
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)

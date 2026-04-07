@@ -13,6 +13,7 @@ export type IncidentTimelineEventType =
   | 'created'
   | 'acknowledged'
   | 'updated'
+  | 'alert_merged'
   | 'assigned'
   | 'escalated'
   | 'severity_changed'
@@ -45,6 +46,8 @@ export interface Incident {
   category: IncidentCategory
   assignedRunbook: string | null
   assignedTo: string | null
+  /** Number of alert-ingest merges (dedup repeats) applied to this incident. */
+  alertMergeCount: number
   createdAt: string
   updatedAt: string
   resolvedAt: string | null
@@ -151,6 +154,24 @@ export interface IncidentNotification {
 export interface IncidentNotificationFeed {
   notifications: IncidentNotification[]
   unreadCount: number
+}
+
+export type AlertActivityType = 'incident_created' | 'alert_merged'
+
+export interface AlertActivityItem {
+  id: string
+  incidentId: string
+  incidentTitle: string
+  incidentSeverity: Severity
+  incidentSource: string
+  type: AlertActivityType
+  description: string
+  mergeCount: number
+  createdAt: string
+}
+
+export interface AlertActivityFeed {
+  items: AlertActivityItem[]
 }
 
 export interface RunbookSuggestion {

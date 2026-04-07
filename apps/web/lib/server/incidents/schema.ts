@@ -30,6 +30,7 @@ export const incidentTimelineEventTypeSchema = z.enum([
   'created',
   'acknowledged',
   'updated',
+  'alert_merged',
   'assigned',
   'escalated',
   'severity_changed',
@@ -55,7 +56,7 @@ export const incidentNoteSchema: z.ZodType<IncidentNote> = z.object({
   content: z.string().min(1),
 })
 
-export const incidentDtoSchema: z.ZodType<Incident> = z.object({
+export const incidentDtoSchema = z.object({
   id: z.string().min(1),
   source: z.string().min(1),
   title: z.string().min(1),
@@ -65,6 +66,7 @@ export const incidentDtoSchema: z.ZodType<Incident> = z.object({
   category: incidentCategorySchema,
   assignedRunbook: z.string().min(1).nullable(),
   assignedTo: z.string().min(1).nullable(),
+  alertMergeCount: z.number().int().min(0).default(0),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().min(1),
   resolvedAt: z.string().datetime({ offset: true }).nullable(),
@@ -88,9 +90,7 @@ export const incidentDtoSchema: z.ZodType<Incident> = z.object({
   }
 })
 
-export const incidentsListDtoSchema: z.ZodType<Incident[]> = z.array(
-  incidentDtoSchema,
-)
+export const incidentsListDtoSchema = z.array(incidentDtoSchema)
 
 export const incidentListQuerySchema = z.object({
   range: z.enum(analyticsDateRangeValues).optional(),
@@ -101,23 +101,33 @@ export const incidentRouteParamsSchema = z.object({
 })
 
 export const incidentLifecycleActionInputSchema = z.object({
-  actor: z.string().trim().min(1).default('OpsMate'),
+  actor: z.string().trim().min(1).default('OpsMate Bot'),
   note: z.string().trim().min(1).optional(),
 })
 
 export const incidentAssignInputSchema = z.object({
-  actor: z.string().trim().min(1).default('OpsMate'),
+  actor: z.string().trim().min(1).default('OpsMate Bot'),
   assignee: z.string().trim().min(1),
 })
 
 export const incidentSeverityChangeInputSchema = z.object({
-  actor: z.string().trim().min(1).default('OpsMate'),
+  actor: z.string().trim().min(1).default('OpsMate Bot'),
   severity: severitySchema,
 })
 
 export const incidentNoteCreateInputSchema = z.object({
-  author: z.string().trim().min(1).default('OpsMate'),
+  author: z.string().trim().min(1).default('OpsMate Bot'),
   content: z.string().trim().min(1),
+})
+
+export const alertIngestInputSchema = z.object({
+  title: z.string().trim().min(1),
+  severity: severitySchema,
+  category: incidentCategorySchema,
+  source: z.string().trim().min(1),
+  description: z.string().trim().optional(),
+  /** When set, repeat ingests with the same key merge into one open incident. */
+  dedupKey: z.string().trim().min(1).max(256).optional(),
 })
 
 export type IncidentDto = Incident
@@ -135,3 +145,4 @@ export type IncidentSeverityChangeInput = z.infer<
 export type IncidentNoteCreateInput = z.infer<
   typeof incidentNoteCreateInputSchema
 >
+export type AlertIngestInput = z.infer<typeof alertIngestInputSchema>

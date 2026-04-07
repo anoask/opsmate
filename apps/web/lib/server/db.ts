@@ -4,7 +4,7 @@ import path from 'node:path'
 
 import { getAnalyticsWindowStart } from '@/lib/analytics/date-range'
 import { getCurrentDemoIncidents } from '@/lib/demo-incidents'
-import { runbooks as mockRunbooks } from '@/lib/mock-data'
+import { runbooks as mockRunbooks, teamMembers } from '@/lib/mock-data'
 import {
   incidentsListDtoSchema,
   type IncidentDto,
@@ -73,7 +73,9 @@ function createSchema(db: Database.Database) {
       updated_at TEXT NOT NULL,
       resolved_at TEXT,
       timeline_json TEXT NOT NULL,
-      notes_json TEXT NOT NULL
+      notes_json TEXT NOT NULL,
+      alert_dedup_key TEXT,
+      alert_merge_count INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS incident_events (
@@ -141,6 +143,15 @@ function createSchema(db: Database.Database) {
       created_at TEXT NOT NULL,
       last_executed TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      role TEXT NOT NULL,
+      status TEXT NOT NULL,
+      joined_at TEXT NOT NULL
+    );
   `)
 }
 
@@ -164,6 +175,28 @@ function ensureIncidentColumns(db: Database.Database) {
   if (!hasColumn(db, 'incidents', 'acknowledged_by')) {
     db.exec('ALTER TABLE incidents ADD COLUMN acknowledged_by TEXT')
   }
+
+  if (!hasColumn(db, 'incidents', 'alert_dedup_key')) {
+    db.exec('ALTER TABLE incidents ADD COLUMN alert_dedup_key TEXT')
+  }
+
+  if (!hasColumn(db, 'incidents', 'alert_merge_count')) {
+    db.exec(
+      'ALTER TABLE incidents ADD COLUMN alert_merge_count INTEGER NOT NULL DEFAULT 0',
+    )
+  }
+}
+
+function ensureIncidentIndexes(db: Database.Database) {
+  if (!hasColumn(db, 'incidents', 'alert_dedup_key')) {
+    return
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_incidents_alert_dedup_key
+      ON incidents(alert_dedup_key)
+      WHERE alert_dedup_key IS NOT NULL
+  `)
 }
 
 function seedIncidents(db: Database.Database) {
@@ -183,7 +216,9 @@ function seedIncidents(db: Database.Database) {
       updated_at,
       resolved_at,
       timeline_json,
-      notes_json
+      notes_json,
+      alert_dedup_key,
+      alert_merge_count
     ) VALUES (
       @id,
       @source,
@@ -198,7 +233,9 @@ function seedIncidents(db: Database.Database) {
       @updated_at,
       @resolved_at,
       @timeline_json,
-      @notes_json
+      @notes_json,
+      @alert_dedup_key,
+      @alert_merge_count
     )
     ON CONFLICT(id) DO UPDATE SET
       source = excluded.source,
@@ -233,6 +270,8 @@ function seedIncidents(db: Database.Database) {
         resolved_at: incident.resolvedAt,
         timeline_json: JSON.stringify(incident.timeline),
         notes_json: JSON.stringify(incident.notes),
+        alert_dedup_key: null,
+        alert_merge_count: incident.alertMergeCount,
       })
     }
   })
@@ -504,6 +543,61 @@ function seedRunbooks(db: Database.Database) {
   seedTransaction(parsedRunbooks)
 }
 
+function seedUsers(db: Database.Database) {
+  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as {
+    count: number
+  }
+
+  if (userCount.count > 0) {
+    return
+  }
+
+  const usersToSeed = [
+    {
+      id: 'sys-opsmate-bot',
+      name: 'OpsMate Bot',
+      email: 'opsmate.bot@system.local',
+      role: 'admin',
+      status: 'active',
+      joinedAt: '2024-01-01',
+    },
+    ...teamMembers,
+  ]
+
+  const insertUser = db.prepare(`
+    INSERT INTO users (
+      id,
+      name,
+      email,
+      role,
+      status,
+      joined_at
+    ) VALUES (
+      @id,
+      @name,
+      @email,
+      @role,
+      @status,
+      @joined_at
+    )
+  `)
+
+  const transaction = db.transaction(() => {
+    for (const user of usersToSeed) {
+      insertUser.run({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        joined_at: user.joinedAt,
+      })
+    }
+  })
+
+  transaction()
+}
+
 function initializeDatabase() {
   const databasePath = getDatabasePath()
   console.info('[db] initializing sqlite database', {
@@ -527,6 +621,9 @@ function initializeDatabase() {
     ensureIncidentColumns(db)
     console.info('[db] ensured legacy incident columns')
 
+    ensureIncidentIndexes(db)
+    console.info('[db] ensured incident indexes')
+
     const refreshedSeedIncidents = seedIncidents(db)
     console.info('[db] seeded incidents', {
       refreshedSeedIncidents: Boolean(refreshedSeedIncidents),
@@ -544,6 +641,9 @@ function initializeDatabase() {
 
     seedRunbooks(db)
     console.info('[db] seeded runbooks')
+
+    seedUsers(db)
+    console.info('[db] seeded users')
 
     return db
   } catch (error) {

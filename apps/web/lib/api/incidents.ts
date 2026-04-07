@@ -205,6 +205,12 @@ function normalizeIncident(
       typeof incident.assignedTo === 'string' || incident.assignedTo === null
         ? incident.assignedTo
         : (fallback?.assignedTo ?? null),
+    alertMergeCount:
+      typeof incident.alertMergeCount === 'number' &&
+      Number.isInteger(incident.alertMergeCount) &&
+      incident.alertMergeCount >= 0
+        ? incident.alertMergeCount
+        : (fallback?.alertMergeCount ?? 0),
     createdAt: createdAt ?? new Date().toISOString(),
     updatedAt: isNonEmptyString(incident.updatedAt)
       ? incident.updatedAt

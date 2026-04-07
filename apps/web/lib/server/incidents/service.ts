@@ -2,10 +2,16 @@ import { randomUUID } from 'node:crypto'
 
 import {
   commitStoredIncidentLifecycleMutation,
+  createStoredIncidentWithLifecycle,
+  findOpenIncidentIdByAlertDedupKey,
   getStoredIncident,
   listStoredIncidents,
+  type StoredIncidentEventRecord,
 } from '@/lib/server/incidents/store'
+import { resolveActorIdentity } from '@/lib/server/users/store'
 import {
+  alertIngestInputSchema,
+  type AlertIngestInput,
   incidentAssignInputSchema,
   incidentLifecycleActionInputSchema,
   incidentNoteCreateInputSchema,
@@ -20,10 +26,12 @@ import {
   type IncidentSeverityChangeInput,
   type IncidentDto,
 } from '@/lib/server/incidents/schema'
+import { deliverSlackNotificationsBestEffort } from '@/lib/server/notifications/slack'
 import type { StoredIncidentNotificationRecord } from '@/lib/server/notifications/store'
 
 type LifecycleTimelineEvent = IncidentDto['timeline'][number] & {
   createdAt: string
+  metadataJson?: string
 }
 type LifecycleNote = IncidentDto['notes'][number] & {
   createdAt: string
@@ -60,6 +68,25 @@ const severityRank: Record<IncidentDto['severity'], number> = {
 
 function formatSeverityLabel(severity: IncidentDto['severity']) {
   return severity.charAt(0).toUpperCase() + severity.slice(1)
+}
+
+function normalizeAlertSource(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function normalizeAlertTitle(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function deriveAlertFingerprintV1(input: {
+  source: string
+  category: IncidentDto['category']
+  title: string
+}) {
+  const normalizedSource = normalizeAlertSource(input.source)
+  const normalizedTitle = normalizeAlertTitle(input.title)
+
+  return `v1|source:${normalizedSource}|category:${input.category}|title:${normalizedTitle}`
 }
 
 function buildTimelineEvent(
@@ -116,6 +143,10 @@ function buildLifecycleNotification(options: {
   }
 }
 
+function normalizeLifecycleActor(actor: string) {
+  return resolveActorIdentity(actor, 'OpsMate Bot')
+}
+
 function createCommentMutation(
   incident: IncidentDto,
   actor: string,
@@ -154,6 +185,7 @@ function persistLifecycleMutation(
     expectedCurrentStatus?: IncidentDto['status']
     expectedCurrentAssignedTo?: string | null
     expectedCurrentSeverity?: IncidentDto['severity']
+    expectedCurrentAlertMergeCount?: number
     fromStatus?: IncidentDto['status'] | null
     toStatus?: IncidentDto['status'] | null
     fromSeverity?: IncidentDto['severity'] | null
@@ -168,6 +200,7 @@ function persistLifecycleMutation(
       expectedCurrentStatus: options.expectedCurrentStatus,
       expectedCurrentAssignedTo: options.expectedCurrentAssignedTo,
       expectedCurrentSeverity: options.expectedCurrentSeverity,
+      expectedCurrentAlertMergeCount: options.expectedCurrentAlertMergeCount,
       notifications: options.notifications,
       events: options.events.map((event) => {
         const isPrimaryTransition = event.id === options.primaryTransitionEventId
@@ -179,6 +212,7 @@ function persistLifecycleMutation(
           actor: event.user ?? null,
           description: event.description,
           createdAt: event.createdAt,
+          metadataJson: event.metadataJson ?? null,
           fromStatus: isPrimaryTransition ? (options.fromStatus ?? null) : null,
           toStatus: isPrimaryTransition ? (options.toStatus ?? null) : null,
           fromSeverity: isPrimaryTransition ? (options.fromSeverity ?? null) : null,
@@ -483,7 +517,11 @@ export function acknowledgeIncidentById(
 ) {
   const incident = getIncidentById(id)
   const parsedInput = incidentLifecycleActionInputSchema.parse(input ?? {})
-  const mutation = createAcknowledgedIncident(incident, parsedInput)
+  const normalizedInput = {
+    ...parsedInput,
+    actor: normalizeLifecycleActor(parsedInput.actor),
+  }
+  const mutation = createAcknowledgedIncident(incident, normalizedInput)
 
   return persistLifecycleMutation(mutation.incident, {
     events: mutation.events,
@@ -500,9 +538,14 @@ export function acknowledgeIncidentById(
 export function assignIncidentById(id: string, input: IncidentAssignInput) {
   const incident = getIncidentById(id)
   const parsedInput = incidentAssignInputSchema.parse(input)
-  const mutation = createAssignedIncident(incident, parsedInput)
+  const normalizedInput = {
+    ...parsedInput,
+    actor: normalizeLifecycleActor(parsedInput.actor),
+    assignee: resolveActorIdentity(parsedInput.assignee, parsedInput.assignee),
+  }
+  const mutation = createAssignedIncident(incident, normalizedInput)
 
-  return persistLifecycleMutation(mutation.incident, {
+  const updatedIncident = persistLifecycleMutation(mutation.incident, {
     events: mutation.events,
     notes: mutation.notes,
     notifications: mutation.notifications,
@@ -513,6 +556,9 @@ export function assignIncidentById(id: string, input: IncidentAssignInput) {
     fromAssignedTo: mutation.fromAssignedTo,
     toAssignedTo: mutation.toAssignedTo,
   })
+
+  void deliverSlackNotificationsBestEffort(mutation.notifications)
+  return updatedIncident
 }
 
 export function changeIncidentSeverityById(
@@ -521,7 +567,11 @@ export function changeIncidentSeverityById(
 ) {
   const incident = getIncidentById(id)
   const parsedInput = incidentSeverityChangeInputSchema.parse(input)
-  const mutation = createSeverityChangedIncident(incident, parsedInput)
+  const normalizedInput = {
+    ...parsedInput,
+    actor: normalizeLifecycleActor(parsedInput.actor),
+  }
+  const mutation = createSeverityChangedIncident(incident, normalizedInput)
 
   return persistLifecycleMutation(mutation.incident, {
     events: mutation.events,
@@ -541,13 +591,17 @@ export function resolveIncidentById(
 ) {
   const incident = getIncidentById(id)
   const parsedInput = incidentLifecycleActionInputSchema.parse(input ?? {})
-  const mutation = createResolvedIncident(incident, parsedInput)
+  const normalizedInput = {
+    ...parsedInput,
+    actor: normalizeLifecycleActor(parsedInput.actor),
+  }
+  const mutation = createResolvedIncident(incident, normalizedInput)
 
   if (mutation.events.length === 0) {
     return incidentDtoSchema.parse(incident)
   }
 
-  return persistLifecycleMutation(mutation.incident, {
+  const updatedIncident = persistLifecycleMutation(mutation.incident, {
     events: mutation.events,
     notes: mutation.notes,
     notifications: mutation.notifications,
@@ -557,6 +611,9 @@ export function resolveIncidentById(
     fromStatus: mutation.fromStatus,
     toStatus: mutation.toStatus,
   })
+
+  void deliverSlackNotificationsBestEffort(mutation.notifications)
+  return updatedIncident
 }
 
 export function reopenIncidentById(
@@ -565,9 +622,13 @@ export function reopenIncidentById(
 ) {
   const incident = getIncidentById(id)
   const parsedInput = incidentLifecycleActionInputSchema.parse(input ?? {})
-  const mutation = createReopenedIncident(incident, parsedInput)
+  const normalizedInput = {
+    ...parsedInput,
+    actor: normalizeLifecycleActor(parsedInput.actor),
+  }
+  const mutation = createReopenedIncident(incident, normalizedInput)
 
-  return persistLifecycleMutation(mutation.incident, {
+  const updatedIncident = persistLifecycleMutation(mutation.incident, {
     events: mutation.events,
     notes: mutation.notes,
     notifications: mutation.notifications,
@@ -577,6 +638,9 @@ export function reopenIncidentById(
     fromStatus: mutation.fromStatus,
     toStatus: mutation.toStatus,
   })
+
+  void deliverSlackNotificationsBestEffort(mutation.notifications)
+  return updatedIncident
 }
 
 export function addIncidentNoteById(
@@ -585,9 +649,10 @@ export function addIncidentNoteById(
 ) {
   const incident = getIncidentById(id)
   const parsedInput = incidentNoteCreateInputSchema.parse(input)
+  const normalizedAuthor = normalizeLifecycleActor(parsedInput.author)
   const commentMutation = createCommentMutation(
     incident,
-    parsedInput.author,
+    normalizedAuthor,
     parsedInput.content,
     new Date(),
   )
@@ -598,4 +663,163 @@ export function addIncidentNoteById(
     expectedCurrentStatus: incident.status,
     expectedCurrentSeverity: incident.severity,
   })
+}
+
+function mergeIngestIntoOpenIncident(
+  incidentId: string,
+  parsed: AlertIngestInput,
+) {
+  const incident = getStoredIncident(incidentId)
+  if (!incident) {
+    throw new IncidentNotFoundError(incidentId)
+  }
+
+  const description =
+    parsed.description?.trim() || 'No description provided.'
+  const now = new Date()
+  const nextMergeCount = incident.alertMergeCount + 1
+  const event = buildTimelineEvent(
+    incidentId,
+    'alert_merged',
+    `Alert merged (repeat ${nextMergeCount}) from ${parsed.source}`,
+    parsed.source,
+    now,
+  )
+  event.metadataJson = JSON.stringify({
+    incidentTitle: parsed.title,
+    incidentSeverity: parsed.severity,
+    incidentSource: parsed.source,
+    mergeCount: nextMergeCount,
+  })
+
+  const updated: IncidentDto = {
+    ...incident,
+    title: parsed.title,
+    description,
+    severity: parsed.severity,
+    alertMergeCount: nextMergeCount,
+    updatedAt: 'Just now',
+    timeline: [...incident.timeline, event],
+  }
+
+  return incidentDtoSchema.parse(
+    persistLifecycleMutation(updated, {
+      events: [event],
+      expectedCurrentStatus: incident.status,
+      expectedCurrentSeverity: incident.severity,
+      expectedCurrentAlertMergeCount: incident.alertMergeCount,
+      notifications: [],
+    }),
+  )
+}
+
+export function ingestAlert(input: unknown): {
+  incident: IncidentDto
+  deduplicated: boolean
+} {
+  const parsed = alertIngestInputSchema.parse(input)
+  const effectiveDedupKey =
+    parsed.dedupKey ??
+    deriveAlertFingerprintV1({
+      source: parsed.source,
+      category: parsed.category,
+      title: parsed.title,
+    })
+  const description =
+    parsed.description?.trim() || 'No description provided.'
+
+  const existingId = findOpenIncidentIdByAlertDedupKey(effectiveDedupKey)
+  if (existingId) {
+    const existingIncident = getStoredIncident(existingId)
+    const sourceMatches =
+      normalizeAlertSource(existingIncident?.source ?? '') ===
+      normalizeAlertSource(parsed.source)
+    const categoryMatches = existingIncident?.category === parsed.category
+
+    if (existingIncident && sourceMatches && categoryMatches) {
+      return {
+        incident: mergeIngestIntoOpenIncident(existingId, parsed),
+        deduplicated: true,
+      }
+    }
+  }
+
+  const incidentId = `INC-${randomUUID()}`
+  const now = new Date()
+  const event = buildTimelineEvent(
+    incidentId,
+    'created',
+    `Incident created from ${parsed.source} alert`,
+    parsed.source,
+    now,
+  )
+
+  const incident: IncidentDto = {
+    id: incidentId,
+    source: parsed.source,
+    title: parsed.title,
+    description,
+    severity: parsed.severity,
+    status: 'open',
+    category: parsed.category,
+    assignedRunbook: null,
+    assignedTo: null,
+    alertMergeCount: 0,
+    createdAt: now.toISOString(),
+    updatedAt: 'Just now',
+    resolvedAt: null,
+    timeline: [event],
+    notes: [],
+  }
+
+  const storedEvent: StoredIncidentEventRecord = {
+    id: event.id,
+    incidentId,
+    type: event.type,
+    actor: event.user ?? null,
+    description: event.description,
+    createdAt: event.createdAt,
+    metadataJson: JSON.stringify({
+      incidentTitle: incident.title,
+      incidentSeverity: incident.severity,
+      incidentSource: incident.source,
+      mergeCount: 0,
+    }),
+    fromStatus: null,
+    toStatus: 'open',
+    fromSeverity: null,
+    toSeverity: parsed.severity,
+    fromAssignedTo: null,
+    toAssignedTo: null,
+  }
+
+  const notifications =
+    parsed.severity === 'critical'
+      ? [
+          buildLifecycleNotification({
+            incident,
+            eventId: event.id,
+            type: 'incident_created_critical',
+            title: 'Critical incident created',
+            message: `${incidentId} was created: ${parsed.title}.`,
+            createdAt: event.createdAt,
+          }),
+        ]
+      : []
+
+  const createdIncident = incidentDtoSchema.parse(
+    createStoredIncidentWithLifecycle({
+      incident,
+      events: [storedEvent],
+      notifications,
+      alertDedupKey: effectiveDedupKey,
+    }),
+  )
+
+  void deliverSlackNotificationsBestEffort(notifications)
+
+  return {
+    incident: createdIncident,
+    deduplicated: false,
+  }
 }

@@ -7,21 +7,25 @@ import { KPICards } from "@/components/dashboard/kpi-cards"
 import { IncidentsTable } from "@/components/dashboard/incidents-table"
 import { SystemHealth } from "@/components/dashboard/system-health"
 import { RunbookSuggestions } from "@/components/dashboard/runbook-suggestions"
+import { AlertsActivity } from "@/components/dashboard/alerts-activity"
 import {
   IncidentTrendChart,
   CategoryDistributionChart,
 } from "@/components/dashboard/incident-charts"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { defaultAnalyticsDateRange } from "@/lib/analytics/date-range"
+import { getAlertActivity } from "@/lib/api/alerts"
 import { loadIncidents } from "@/lib/api/incidents"
 import { buildDashboardIncidentSnapshot } from "@/lib/dashboard/incidents"
-import type { Incident } from "@/lib/types"
+import type { AlertActivityItem, Incident } from "@/lib/types"
 
 export default function DashboardPage() {
   const dashboardRange = '30d' satisfies typeof defaultAnalyticsDateRange
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [isLoadingIncidents, setIsLoadingIncidents] = useState(true)
   const [incidentsWarning, setIncidentsWarning] = useState<string | null>(null)
+  const [alertActivity, setAlertActivity] = useState<AlertActivityItem[]>([])
+  const [isLoadingAlertActivity, setIsLoadingAlertActivity] = useState(true)
 
   useEffect(() => {
     let isMounted = true
@@ -58,6 +62,37 @@ export default function DashboardPage() {
       isMounted = false
     }
   }, [dashboardRange])
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function refreshAlertActivity() {
+      setIsLoadingAlertActivity(true)
+
+      try {
+        const feed = await getAlertActivity(8)
+        if (!isMounted) {
+          return
+        }
+        setAlertActivity(feed.items)
+      } catch {
+        if (!isMounted) {
+          return
+        }
+        setAlertActivity([])
+      } finally {
+        if (isMounted) {
+          setIsLoadingAlertActivity(false)
+        }
+      }
+    }
+
+    void refreshAlertActivity()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   const incidentSnapshot = useMemo(
     () => buildDashboardIncidentSnapshot(incidents),
@@ -117,6 +152,7 @@ export default function DashboardPage() {
         {/* Right Sidebar Panels */}
         <div className="space-y-6">
           <SystemHealth />
+          <AlertsActivity items={alertActivity} isLoading={isLoadingAlertActivity} />
           <RunbookSuggestions />
         </div>
       </div>
