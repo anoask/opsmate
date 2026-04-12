@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { requireSessionActorName } from '@/lib/server/auth/session'
 import { handleIncidentRouteError } from '@/lib/server/incidents/http'
 import { reopenIncidentById } from '@/lib/server/incidents/service'
 import {
@@ -24,8 +25,9 @@ export async function PATCH(
     const body = incidentLifecycleActionInputSchema.parse(
       await request.json().catch(() => ({})),
     )
+    const actor = await requireSessionActorName()
 
-    return NextResponse.json(reopenIncidentById(params.id, body))
+    return NextResponse.json(reopenIncidentById(params.id, { ...body, actor }))
   } catch (error) {
     return handleIncidentRouteError(error, {
       invalidRequestCode: 'INCIDENT_REOPEN_REQUEST_INVALID',

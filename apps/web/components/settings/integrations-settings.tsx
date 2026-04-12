@@ -1,6 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import { integrations } from '@/lib/mock-data'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -33,14 +35,32 @@ export function IntegrationsSettings() {
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <div>
           <CardTitle>Integrations</CardTitle>
-          <CardDescription>Connect external services and platforms</CardDescription>
+          <CardDescription>
+            Sample cards for product framing. Slack in production depends on{' '}
+            <code className="rounded bg-secondary/80 px-1 text-xs">SLACK_WEBHOOK_URL</code> and team
+            prefs—not the status badges below.
+          </CardDescription>
         </div>
         <Button size="sm" className="gap-2">
           <Plus className="w-4 h-4" />
           Add Integration
         </Button>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        <Alert className="border-border/70 bg-secondary/30">
+          <AlertTitle className="text-sm">Where to verify delivery</AlertTitle>
+          <AlertDescription className="text-xs leading-relaxed text-muted-foreground">
+            Use{' '}
+            <Link href="/notifications" className="text-primary underline-offset-2 hover:underline">
+              Notification center
+            </Link>{' '}
+            for send history and retries. Connect alert sources via your ingestion path;{' '}
+            <Link href="/alerts" className="text-primary underline-offset-2 hover:underline">
+              Alerts
+            </Link>{' '}
+            shows recent signal.
+          </AlertDescription>
+        </Alert>
         <div className="space-y-3">
           {integrations.map((integration) => (
             <div key={integration.id} className="flex items-center justify-between rounded-lg border border-border/60 bg-secondary/35 p-4 shadow-sm shadow-black/5 transition-colors hover:bg-secondary/50">

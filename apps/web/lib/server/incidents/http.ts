@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { ZodError } from 'zod'
 
+import { UnauthenticatedError } from '@/lib/server/auth/errors'
+import { ForbiddenActionError } from '@/lib/server/permissions'
 import { IncidentStateConflictError } from '@/lib/server/incidents/store'
 import {
   IncidentLifecycleError,
@@ -35,6 +37,26 @@ export function handleIncidentRouteError(
         message: error.message,
       },
       404,
+    )
+  }
+
+  if (error instanceof UnauthenticatedError) {
+    return jsonError(
+      {
+        error: 'INCIDENT_ACTION_UNAUTHENTICATED',
+        message: error.message,
+      },
+      401,
+    )
+  }
+
+  if (error instanceof ForbiddenActionError) {
+    return jsonError(
+      {
+        error: 'INCIDENT_ACTION_FORBIDDEN',
+        message: error.message,
+      },
+      403,
     )
   }
 

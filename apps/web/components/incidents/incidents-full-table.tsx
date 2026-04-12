@@ -18,7 +18,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { incidentSeverityBadgeStyles, incidentStatusBadgeStyles } from "@/lib/presentation"
+import {
+  incidentSeverityBadgeStyles,
+  incidentStatusBadgeStyles,
+  majorIncidentBadgeClassName,
+} from "@/lib/presentation"
+import { cn } from "@/lib/utils"
 import type { Incident } from "@/lib/types"
 
 interface IncidentsFullTableProps {
@@ -61,11 +66,28 @@ export function IncidentsFullTable({
           {incidents.map((incident) => (
             <TableRow
               key={incident.id}
-              className="cursor-pointer border-border/60 hover:bg-secondary/35"
+              className={cn(
+                "cursor-pointer border-border/60 hover:bg-secondary/35",
+                incident.isMajorIncident && "border-l-2 border-l-rose-500/55",
+                !incident.isMajorIncident &&
+                  incident.status !== "resolved" &&
+                  !incident.assignedTo?.trim() &&
+                  "border-l-2 border-l-amber-500/50",
+              )}
               onClick={() => onSelectIncident(incident)}
             >
-              <TableCell className="px-6 font-mono text-sm text-primary">
-                {incident.id}
+              <TableCell className="px-6">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-sm text-primary">{incident.id}</span>
+                  {incident.isMajorIncident ? (
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] ${majorIncidentBadgeClassName}`}
+                    >
+                      Major
+                    </Badge>
+                  ) : null}
+                </div>
               </TableCell>
               <TableCell className="text-muted-foreground">
                 {incident.source}
@@ -96,7 +118,15 @@ export function IncidentsFullTable({
                     {incident.assignedTo}
                   </span>
                 ) : (
-                  <span className="text-muted-foreground/60">Unassigned</span>
+                  <span
+                    className={cn(
+                      "text-muted-foreground/60",
+                      incident.status !== "resolved" &&
+                        "font-medium text-amber-700/90 dark:text-amber-400/90",
+                    )}
+                  >
+                    Unassigned
+                  </span>
                 )}
               </TableCell>
               <TableCell className="text-muted-foreground max-w-[150px] truncate">

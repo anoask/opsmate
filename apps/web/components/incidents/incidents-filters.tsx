@@ -17,6 +17,8 @@ interface IncidentsFiltersProps {
   onSeverityChange: (value: string) => void
   sourceFilter: string
   onSourceChange: (value: string) => void
+  majorFilter: string
+  onMajorChange: (value: string) => void
 }
 
 export function IncidentsFilters({
@@ -26,6 +28,8 @@ export function IncidentsFilters({
   onSeverityChange,
   sourceFilter,
   onSourceChange,
+  majorFilter,
+  onMajorChange,
 }: IncidentsFiltersProps) {
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/70 p-4 shadow-sm shadow-black/10 sm:flex-row">
@@ -61,6 +65,15 @@ export function IncidentsFilters({
           <SelectItem value="CloudWatch">CloudWatch</SelectItem>
           <SelectItem value="Sentry">Sentry</SelectItem>
           <SelectItem value="Prometheus">Prometheus</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select value={majorFilter} onValueChange={onMajorChange}>
+        <SelectTrigger className="h-10 w-full border-border/70 bg-secondary/70 sm:w-[160px]">
+          <SelectValue placeholder="Major" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All incidents</SelectItem>
+          <SelectItem value="major">Major only</SelectItem>
         </SelectContent>
       </Select>
     </div>

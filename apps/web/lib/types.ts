@@ -36,6 +36,30 @@ export interface IncidentNote {
   content: string
 }
 
+export type IncidentReviewStatus = 'not_started' | 'draft' | 'completed'
+
+export type IncidentReviewActionItemStatus = 'open' | 'done' | 'dropped'
+
+/** Trackable follow-up on a post-incident review (stored inside review_json). */
+export interface IncidentReviewActionItem {
+  id: string
+  title: string
+  owner: string
+  status: IncidentReviewActionItemStatus
+  /** Date-only (YYYY-MM-DD) or ISO string; null if unset. */
+  dueAt: string | null
+}
+
+/** Lightweight post-incident review (resolved incidents). */
+export interface IncidentReview {
+  summary: string
+  rootCause: string
+  /** Free-form notes; structured work lives in actionItems. */
+  followUps: string
+  status: IncidentReviewStatus
+  actionItems: IncidentReviewActionItem[]
+}
+
 export interface Incident {
   id: string
   source: string
@@ -48,11 +72,20 @@ export interface Incident {
   assignedTo: string | null
   /** Number of alert-ingest merges (dedup repeats) applied to this incident. */
   alertMergeCount: number
+  /** Cross-team visibility for severe or customer-impacting incidents. */
+  isMajorIncident: boolean
   createdAt: string
   updatedAt: string
   resolvedAt: string | null
   timeline: IncidentTimelineEvent[]
   notes: IncidentNote[]
+  review: IncidentReview
+}
+
+/** Per-incident workspace payload (alerts ingest history + notifications). */
+export interface IncidentWorkspaceEnrichment {
+  alertIngests: AlertHistoryItem[]
+  notifications: IncidentNotification[]
 }
 
 export type SystemHealthStatus = 'operational' | 'degraded' | 'down'
@@ -71,7 +104,7 @@ export interface RunbookStep {
   expectedOutput?: string
 }
 
-export type RunbookExecutionStatus = 'success' | 'failed' | 'partial'
+export type RunbookExecutionStatus = 'in_progress' | 'success' | 'failed' | 'partial'
 
 export interface RunbookExecution {
   id: string
@@ -80,6 +113,10 @@ export interface RunbookExecution {
   duration: string
   status: RunbookExecutionStatus
   incidentId?: string
+  startedAt?: string
+  completedAt?: string
+  startedBy?: string
+  completedStepIds?: string[]
 }
 
 export interface Runbook {
@@ -100,6 +137,15 @@ export interface Runbook {
   executions: RunbookExecution[]
 }
 
+/** Runbook execution state for one incident (from persisted runbook + executions). */
+export interface IncidentRunbookExecutionContext {
+  runbookId: string | null
+  runbookTitle: string | null
+  steps: RunbookStep[]
+  activeExecution: RunbookExecution | null
+  history: RunbookExecution[]
+}
+
 export interface MetricCard {
   label: string
   value: string | number
@@ -113,6 +159,16 @@ export interface MetricCard {
 export type UserRole = 'admin' | 'manager' | 'responder' | 'viewer'
 export type UserStatus = 'active' | 'inactive'
 
+/**
+ * Gates shared Slack webhook delivery per category: if no active teammate (excl. system bot)
+ * has a flag on, new notifications of that category skip Slack (in-app feed unchanged).
+ */
+export interface UserNotificationPrefs {
+  notifyOnCritical: boolean
+  notifyOnAssignment: boolean
+  notifyOnLifecycle: boolean
+}
+
 export interface User {
   id: string
   name: string
@@ -120,6 +176,7 @@ export interface User {
   role: UserRole
   status: UserStatus
   joinedAt: string
+  notificationPrefs: UserNotificationPrefs
 }
 
 export type NotificationChannel = 'email' | 'slack' | 'sms'
@@ -137,6 +194,7 @@ export type IncidentNotificationType =
   | 'incident_assigned'
   | 'incident_reopened'
   | 'incident_resolved'
+  | 'incident_major_updated'
 
 export interface IncidentNotification {
   id: string
@@ -153,6 +211,20 @@ export interface IncidentNotification {
 
 export interface IncidentNotificationFeed {
   notifications: IncidentNotification[]
+  unreadCount: number
+}
+
+export type SlackDeliveryStatus = 'delivered' | 'failed' | 'skipped' | 'not_attempted'
+
+export interface NotificationCenterItem extends IncidentNotification {
+  slackDeliveryStatus: SlackDeliveryStatus
+  slackAttemptedAt: string | null
+  slackDeliveryDetail: string | null
+  retryEligible: boolean
+}
+
+export interface NotificationCenterFeed {
+  items: NotificationCenterItem[]
   unreadCount: number
 }
 
@@ -174,6 +246,25 @@ export interface AlertActivityFeed {
   items: AlertActivityItem[]
 }
 
+export type AlertIngestDisposition = 'incident_created' | 'incident_merged'
+
+export interface AlertHistoryItem {
+  id: string
+  source: string
+  category: IncidentCategory
+  title: string
+  severity: Severity
+  description: string
+  dedupKey: string
+  disposition: AlertIngestDisposition
+  incidentId: string
+  ingestedAt: string
+}
+
+export interface AlertHistoryFeed {
+  items: AlertHistoryItem[]
+}
+
 export interface RunbookSuggestion {
   id: string
   title: string
@@ -186,6 +277,18 @@ export interface Integration {
   type: string
   status: 'connected' | 'disconnected' | 'error'
   lastSync?: string
+}
+
+/** Booleans only — safe for `/api/health` and settings UI (no secrets). */
+export type WorkspaceConfigFlags = {
+  slackWebhookConfigured: boolean
+  customApiBaseUrlConfigured: boolean
+  persistentDbConfigured: boolean
+  sqliteCustomPathConfigured: boolean
+  /** `AUTH_SECRET` present and at least 32 chars (required for secure sessions in production). */
+  authSecretConfigured: boolean
+  /** `ALERT_INGEST_SECRET` set; ingest accepts Bearer auth when configured. */
+  alertIngestConfigured: boolean
 }
 
 export type TimelineEvent = IncidentTimelineEvent

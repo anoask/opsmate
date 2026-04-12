@@ -5,6 +5,7 @@ import type {
   RunbookExecution,
   RunbookExecutionStatus,
   RunbookStep,
+  IncidentRunbookExecutionContext,
   Severity,
 } from '@/lib/types'
 
@@ -62,6 +63,7 @@ type RunbookApiResponse = Partial<
 
 const VALID_SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low']
 const VALID_EXECUTION_STATUSES: RunbookExecutionStatus[] = [
+  'in_progress',
   'success',
   'failed',
   'partial',
@@ -124,6 +126,18 @@ function normalizeRunbookExecution(
     incidentId: isNonEmptyString(execution.incidentId)
       ? execution.incidentId
       : fallback?.incidentId,
+    startedAt: isValidIsoDate(execution.startedAt)
+      ? execution.startedAt
+      : fallback?.startedAt,
+    completedAt: isValidIsoDate(execution.completedAt)
+      ? execution.completedAt
+      : fallback?.completedAt,
+    startedBy: isNonEmptyString(execution.startedBy)
+      ? execution.startedBy
+      : fallback?.startedBy,
+    completedStepIds: Array.isArray(execution.completedStepIds)
+      ? execution.completedStepIds.filter(isNonEmptyString)
+      : (fallback?.completedStepIds ?? []),
   }
 }
 
@@ -314,4 +328,109 @@ export async function loadRunbook(
       warning: RUNBOOKS_FALLBACK_MESSAGE,
     }
   }
+}
+
+export async function getIncidentRunbookExecutionContext(
+  incidentId: string,
+): Promise<IncidentRunbookExecutionContext> {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(
+      buildApiUrl(`/api/incidents/${incidentId}/runbook-execution-context`),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+      },
+    )
+
+    if (!response.ok) {
+      throw new RunbooksApiError(
+        `Runbook execution context request failed with status ${response.status}.`,
+        response.status,
+      )
+    }
+
+    return (await response.json()) as IncidentRunbookExecutionContext
+  } catch (error) {
+    if (error instanceof RunbooksApiError) {
+      throw error
+    }
+
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new RunbooksApiError('Runbook execution context request timed out.')
+    }
+
+    throw new RunbooksApiError('Unable to load runbook execution context.')
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
+export async function startRunbookExecutionFromIncident(incidentId: string) {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(
+      buildApiUrl(`/api/incidents/${incidentId}/runbook-executions/start`),
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+        signal: controller.signal,
+      },
+    )
+
+    if (!response.ok) {
+      throw new RunbooksApiError(
+        `Runbook execution start request failed with status ${response.status}.`,
+        response.status,
+      )
+    }
+
+    return (await response.json()) as {
+      runbook: Runbook
+      execution: RunbookExecution
+    }
+  } catch (error) {
+    if (error instanceof RunbooksApiError) {
+      throw error
+    }
+
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new RunbooksApiError('Runbook execution start request timed out.')
+    }
+
+    throw new RunbooksApiError(
+      'Unable to start runbook execution from incident.',
+    )
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
+export async function updateRunbookExecution(
+  runbookId: string,
+  executionId: string,
+  input: {
+    status?: RunbookExecutionStatus
+    completedStepIds?: string[]
+  },
+) {
+  return requestJson<{
+    runbook: Runbook
+    execution: RunbookExecution
+  }>(`/${runbookId}/executions/${executionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      status: input.status,
+      completedStepIds: input.completedStepIds,
+    }),
+  })
 }

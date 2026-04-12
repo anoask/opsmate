@@ -1,6 +1,6 @@
 "use client"
 
-import { MoreHorizontal, ExternalLink } from "lucide-react"
+import { MoreHorizontal, ExternalLink, Flag, User } from "lucide-react"
 import Link from "next/link"
 import {
   Table,
@@ -19,7 +19,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { incidentSeverityBadgeStyles, incidentStatusBadgeStyles } from "@/lib/presentation"
+import {
+  incidentSeverityBadgeStyles,
+  incidentStatusBadgeStyles,
+  majorIncidentBadgeClassName,
+} from "@/lib/presentation"
+import { cn } from "@/lib/utils"
 import type { Incident } from "@/lib/types"
 
 interface IncidentsTableProps {
@@ -31,6 +36,11 @@ export function IncidentsTable({
   incidents,
   isLoading = false,
 }: IncidentsTableProps) {
+  const majorInList = incidents.filter((i) => i.isMajorIncident).length
+  const unassignedActiveInList = incidents.filter(
+    (i) => i.status !== "resolved" && !i.assignedTo?.trim(),
+  ).length
+
   return (
     <Card className="bg-card border-border">
       <CardHeader className="flex flex-row items-center justify-between border-b border-border/60 pb-4">
@@ -38,6 +48,26 @@ export function IncidentsTable({
           <CardTitle className="text-lg font-semibold">Recent Incidents</CardTitle>
           <p className="text-sm text-muted-foreground">
             Latest alerts requiring attention across connected systems
+            {majorInList > 0 ? (
+              <span className="text-foreground/80">
+                {" "}
+                ·{" "}
+                <span className="inline-flex items-center gap-1">
+                  <Flag className="inline h-3.5 w-3.5 text-rose-500" aria-hidden />
+                  {majorInList} major
+                </span>
+              </span>
+            ) : null}
+            {unassignedActiveInList > 0 ? (
+              <span className="text-foreground/80">
+                {" "}
+                ·{" "}
+                <span className="inline-flex items-center gap-1 text-amber-700/90 dark:text-amber-400/85">
+                  <User className="inline h-3.5 w-3.5" aria-hidden />
+                  {unassignedActiveInList} need owner
+                </span>
+              </span>
+            ) : null}
           </p>
         </div>
         <Button
@@ -61,6 +91,7 @@ export function IncidentsTable({
               <TableHead>Title</TableHead>
               <TableHead>Severity</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Assignee</TableHead>
               <TableHead>Runbook</TableHead>
               <TableHead>Updated</TableHead>
               <TableHead className="w-[56px] pr-6"></TableHead>
@@ -70,7 +101,7 @@ export function IncidentsTable({
             {isLoading ? (
               <TableRow className="border-border/60 hover:bg-transparent">
                 <TableCell
-                  colSpan={8}
+                  colSpan={9}
                   className="px-6 py-10 text-center text-sm text-muted-foreground"
                 >
                   Loading recent incidents...
@@ -79,7 +110,7 @@ export function IncidentsTable({
             ) : incidents.length === 0 ? (
               <TableRow className="border-border/60 hover:bg-transparent">
                 <TableCell
-                  colSpan={8}
+                  colSpan={9}
                   className="px-6 py-10 text-center text-sm text-muted-foreground"
                 >
                   No incidents available yet.
@@ -89,10 +120,27 @@ export function IncidentsTable({
               incidents.map((incident) => (
                 <TableRow
                   key={incident.id}
-                  className="cursor-pointer border-border/60 hover:bg-secondary/35"
+                  className={cn(
+                    "cursor-pointer border-border/60 hover:bg-secondary/35",
+                    incident.isMajorIncident && "border-l-2 border-l-rose-500/55",
+                    !incident.isMajorIncident &&
+                      incident.status !== "resolved" &&
+                      !incident.assignedTo?.trim() &&
+                      "border-l-2 border-l-amber-500/50",
+                  )}
                 >
-                  <TableCell className="px-6 font-mono text-sm text-primary">
-                    {incident.id}
+                  <TableCell className="px-6">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm text-primary">{incident.id}</span>
+                      {incident.isMajorIncident ? (
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] ${majorIncidentBadgeClassName}`}
+                        >
+                          Major
+                        </Badge>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {incident.source}
@@ -115,6 +163,24 @@ export function IncidentsTable({
                     >
                       {incident.status}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-[140px] text-muted-foreground text-sm">
+                    {incident.assignedTo?.trim() ? (
+                      <span className="flex items-center gap-1.5 truncate">
+                        <User className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        <span className="truncate">{incident.assignedTo}</span>
+                      </span>
+                    ) : (
+                      <span
+                        className={cn(
+                          "text-muted-foreground/70",
+                          incident.status !== "resolved" &&
+                            "font-medium text-amber-700/90 dark:text-amber-400/90",
+                        )}
+                      >
+                        Unassigned
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {incident.assignedRunbook || "—"}

@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, Clock3, AlertTriangle } from "lucide-react"
+import { AlertCircle, CheckCircle2, Clock3, AlertTriangle, Flag } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { MetricCard } from "@/lib/types"
 
@@ -7,6 +7,7 @@ interface KPICardsProps {
   resolvedIncidents: number
   investigatingIncidents: number
   criticalActiveIncidents: number
+  majorActiveIncidents: number
   isLoading?: boolean
 }
 
@@ -15,6 +16,7 @@ export function KPICards({
   resolvedIncidents,
   investigatingIncidents,
   criticalActiveIncidents,
+  majorActiveIncidents,
   isLoading = false,
 }: KPICardsProps) {
   const kpis: MetricCard[] = [
@@ -46,10 +48,17 @@ export function KPICards({
       color: "text-red-500",
       bgColor: "bg-red-500/10",
     },
+    {
+      label: "Major (active)",
+      value: majorActiveIncidents,
+      icon: Flag,
+      color: "text-rose-500",
+      bgColor: "bg-rose-500/10",
+    },
   ]
 
   return (
-    <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {kpis.map((kpi) => {
         const Icon = kpi.icon
         return (

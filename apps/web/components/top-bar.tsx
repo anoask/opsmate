@@ -1,7 +1,9 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Bell, Search } from "lucide-react"
+import { Bell, Search, UserCircle } from "lucide-react"
+import Link from "next/link"
+import { useActor } from "@/components/actor-context"
 import { getNotificationFeed } from "@/lib/api/notifications"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -40,6 +42,7 @@ function formatNotificationTimestamp(createdAt: string) {
 }
 
 export function TopBar() {
+  const { actorName, sessionUser, sessionReady, currentRole, signOut } = useActor()
   const [notifications, setNotifications] = useState<IncidentNotification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true)
@@ -91,6 +94,34 @@ export function TopBar() {
             <SelectItem value="dev">Development</SelectItem>
           </SelectContent>
         </Select>
+
+        {sessionReady && sessionUser ? (
+          <div className="hidden items-center gap-2 md:flex">
+            <UserCircle className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Signed in
+              </span>
+              <div className="flex h-9 max-w-[240px] items-center gap-2 rounded-md border border-border/70 bg-secondary/70 px-2">
+                <span className="truncate text-xs font-medium text-foreground">{actorName}</span>
+                {currentRole ? (
+                  <Badge variant="secondary" className="shrink-0 text-[10px] capitalize">
+                    {currentRole}
+                  </Badge>
+                ) : null}
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 border-border/70 text-xs"
+              onClick={() => void signOut()}
+            >
+              Sign out
+            </Button>
+          </div>
+        ) : null}
 
         {/* Notifications */}
         <DropdownMenu onOpenChange={(open) => open && void refreshNotifications()}>
@@ -144,9 +175,12 @@ export function TopBar() {
                           <p className="text-sm font-medium text-foreground">
                             {notification.title}
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <Link
+                            href={`/incidents?incident=${encodeURIComponent(notification.incidentId)}`}
+                            className="text-xs font-mono text-primary underline-offset-2 hover:underline"
+                          >
                             {notification.incidentId}
-                          </p>
+                          </Link>
                         </div>
                         <Badge
                           variant="outline"
@@ -166,6 +200,11 @@ export function TopBar() {
                 )}
               </div>
             </ScrollArea>
+            <div className="border-t border-border/70 p-2">
+              <Button asChild variant="ghost" className="w-full justify-center">
+                <Link href="/notifications">Open notification center</Link>
+              </Button>
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
 

@@ -1,6 +1,10 @@
 import { getDb } from '@/lib/server/db'
-import { alertActivityFeedSchema } from '@/lib/server/alerts/schema'
-import type { AlertActivityItem } from '@/lib/types'
+import {
+  alertActivityFeedSchema,
+  alertHistoryFeedSchema,
+  alertHistoryItemSchema,
+} from '@/lib/server/alerts/schema'
+import type { AlertActivityItem, AlertHistoryItem } from '@/lib/types'
 
 type AlertActivityRow = {
   id: string
@@ -80,4 +84,161 @@ export function listStoredAlertActivity(limit = 10) {
   return alertActivityFeedSchema.parse({
     items: rows.map(parseAlertActivityRow),
   })
+}
+
+type AlertHistoryRow = {
+  id: string
+  source: string
+  category: AlertHistoryItem['category']
+  title: string
+  severity: AlertHistoryItem['severity']
+  description: string
+  dedup_key: string
+  disposition: AlertHistoryItem['disposition']
+  incident_id: string
+  ingested_at: string
+}
+
+function parseAlertHistoryRow(row: AlertHistoryRow): AlertHistoryItem {
+  return alertHistoryItemSchema.parse({
+    id: row.id,
+    source: row.source,
+    category: row.category,
+    title: row.title,
+    severity: row.severity,
+    description: row.description,
+    dedupKey: row.dedup_key,
+    disposition: row.disposition,
+    incidentId: row.incident_id,
+    ingestedAt: row.ingested_at,
+  })
+}
+
+export function recordAlertIngestHistory(input: {
+  id: string
+  source: string
+  category: AlertHistoryItem['category']
+  title: string
+  severity: AlertHistoryItem['severity']
+  description: string
+  dedupKey: string
+  disposition: AlertHistoryItem['disposition']
+  incidentId: string
+  ingestedAt: string
+}) {
+  const parsed = alertHistoryItemSchema.parse(input)
+  const db = getDb()
+
+  db.prepare(
+    `INSERT INTO alert_ingests (
+      id,
+      source,
+      category,
+      title,
+      severity,
+      description,
+      dedup_key,
+      disposition,
+      incident_id,
+      ingested_at
+    ) VALUES (
+      @id,
+      @source,
+      @category,
+      @title,
+      @severity,
+      @description,
+      @dedup_key,
+      @disposition,
+      @incident_id,
+      @ingested_at
+    )`,
+  ).run({
+    id: parsed.id,
+    source: parsed.source,
+    category: parsed.category,
+    title: parsed.title,
+    severity: parsed.severity,
+    description: parsed.description,
+    dedup_key: parsed.dedupKey,
+    disposition: parsed.disposition,
+    incident_id: parsed.incidentId,
+    ingested_at: parsed.ingestedAt,
+  })
+}
+
+export function listStoredAlertHistory(
+  limit = 20,
+  disposition?: AlertHistoryItem['disposition'],
+) {
+  const db = getDb()
+  const rows = (
+    disposition
+      ? db
+          .prepare(
+            `SELECT
+              id,
+              source,
+              category,
+              title,
+              severity,
+              description,
+              dedup_key,
+              disposition,
+              incident_id,
+              ingested_at
+            FROM alert_ingests
+            WHERE disposition = ?
+            ORDER BY datetime(ingested_at) DESC, rowid DESC
+            LIMIT ?`,
+          )
+          .all(disposition, limit)
+      : db
+          .prepare(
+            `SELECT
+              id,
+              source,
+              category,
+              title,
+              severity,
+              description,
+              dedup_key,
+              disposition,
+              incident_id,
+              ingested_at
+            FROM alert_ingests
+            ORDER BY datetime(ingested_at) DESC, rowid DESC
+            LIMIT ?`,
+          )
+          .all(limit)
+  ) as AlertHistoryRow[]
+
+  return alertHistoryFeedSchema.parse({
+    items: rows.map(parseAlertHistoryRow),
+  })
+}
+
+export function listStoredAlertIngestsForIncident(incidentId: string, limit = 15) {
+  const db = getDb()
+  const rows = db
+    .prepare(
+      `SELECT
+        id,
+        source,
+        category,
+        title,
+        severity,
+        description,
+        dedup_key,
+        disposition,
+        incident_id,
+        ingested_at
+      FROM alert_ingests
+      WHERE incident_id = ?
+      ORDER BY datetime(ingested_at) DESC, rowid DESC
+      LIMIT ?`,
+    )
+    .all(incidentId, limit) as AlertHistoryRow[]
+
+  return rows.map(parseAlertHistoryRow)
 }

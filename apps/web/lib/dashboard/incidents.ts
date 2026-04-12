@@ -17,6 +17,8 @@ export interface DashboardIncidentSnapshot {
   resolvedIncidents: number
   investigatingIncidents: number
   criticalActiveIncidents: number
+  majorActiveIncidents: number
+  unassignedActiveIncidents: number
   recentIncidents: Incident[]
   incidentTrendData: DashboardIncidentTrendPoint[]
   categoryData: DashboardIncidentCategoryPoint[]
@@ -148,12 +150,20 @@ export function buildDashboardIncidentSnapshot(
   const criticalActiveIncidents = activeIncidents.filter(
     (incident) => incident.severity === 'critical',
   )
+  const majorActiveIncidents = activeIncidents.filter(
+    (incident) => incident.isMajorIncident,
+  )
+  const unassignedActiveIncidents = activeIncidents.filter(
+    (incident) => !incident.assignedTo?.trim(),
+  )
 
   return {
     activeAlerts: activeIncidents.length,
     resolvedIncidents: resolvedIncidents.length,
     investigatingIncidents: investigatingIncidents.length,
     criticalActiveIncidents: criticalActiveIncidents.length,
+    majorActiveIncidents: majorActiveIncidents.length,
+    unassignedActiveIncidents: unassignedActiveIncidents.length,
     recentIncidents: sortedIncidents.slice(0, 5),
     incidentTrendData: buildIncidentTrendData(incidents),
     categoryData: buildIncidentCategoryData(incidents),

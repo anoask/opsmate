@@ -8,7 +8,12 @@ import type {
   Incident,
   IncidentCategory,
   IncidentNote,
+  IncidentReview,
+  IncidentReviewActionItem,
+  IncidentReviewActionItemStatus,
+  IncidentReviewStatus,
   IncidentTimelineEvent,
+  IncidentWorkspaceEnrichment,
   Severity,
   Status,
 } from '@/lib/types'
@@ -48,6 +53,10 @@ export const INCIDENT_REOPEN_FALLBACK_MESSAGE =
   'Live incident service is unavailable. Incident was reopened locally in demo mode.'
 export const INCIDENT_NOTE_FALLBACK_MESSAGE =
   'Live incident service is unavailable. Note was added locally in demo mode.'
+export const INCIDENT_REVIEW_FALLBACK_MESSAGE =
+  'Live incident service is unavailable. Review was saved locally in demo mode.'
+export const INCIDENT_MAJOR_FALLBACK_MESSAGE =
+  'Live incident service is unavailable. Major incident flag was updated locally in demo mode.'
 
 class IncidentsApiError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -57,7 +66,10 @@ class IncidentsApiError extends Error {
 }
 
 type IncidentApiResponse = Partial<
-  Omit<Incident, 'timeline' | 'notes' | 'title' | 'description'>
+  Omit<
+    Incident,
+    'timeline' | 'notes' | 'title' | 'description' | 'review' | 'isMajorIncident'
+  >
 > & {
   id?: string
   title?: string | null
@@ -65,6 +77,8 @@ type IncidentApiResponse = Partial<
   description?: string | null
   timeline?: IncidentTimelineEvent[] | null
   notes?: IncidentNote[] | null
+  review?: unknown
+  isMajorIncident?: boolean | number | null
 }
 
 const DEFAULT_INCIDENT_CATEGORY: IncidentCategory = 'application'
@@ -77,6 +91,24 @@ const VALID_INCIDENT_CATEGORIES: IncidentCategory[] = [
   'network',
   'security',
 ]
+const VALID_REVIEW_STATUSES: IncidentReviewStatus[] = [
+  'not_started',
+  'draft',
+  'completed',
+]
+const VALID_ACTION_ITEM_STATUSES: IncidentReviewActionItemStatus[] = [
+  'open',
+  'done',
+  'dropped',
+]
+
+const EMPTY_INCIDENT_REVIEW: IncidentReview = {
+  summary: '',
+  rootCause: '',
+  followUps: '',
+  status: 'not_started',
+  actionItems: [],
+}
 const severityRank: Record<Severity, number> = {
   critical: 0,
   high: 1,
@@ -135,6 +167,22 @@ function normalizeTimeline(
     : (fallback ?? []).map((event) => ({ ...event }))
 }
 
+function normalizeMajorIncident(
+  value: unknown,
+  fallback?: boolean,
+): boolean {
+  if (typeof value === 'boolean') {
+    return value
+  }
+  if (value === 1 || value === '1') {
+    return true
+  }
+  if (value === 0 || value === '0') {
+    return false
+  }
+  return fallback ?? false
+}
+
 function normalizeNotes(
   notes: IncidentApiResponse['notes'],
   fallback?: IncidentNote[],
@@ -142,6 +190,87 @@ function normalizeNotes(
   return Array.isArray(notes)
     ? notes.map((note) => ({ ...note }))
     : (fallback ?? []).map((note) => ({ ...note }))
+}
+
+function normalizeActionItems(
+  value: unknown,
+  fallbackItems: IncidentReviewActionItem[],
+): IncidentReviewActionItem[] {
+  if (!Array.isArray(value)) {
+    return fallbackItems.map((item) => ({ ...item }))
+  }
+
+  return value.map((raw, index) => {
+    const fb = fallbackItems[index]
+    if (!raw || typeof raw !== 'object') {
+      return (
+        fb ?? {
+          id: `ai-${index}`,
+          title: '',
+          owner: '',
+          status: 'open' as IncidentReviewActionItemStatus,
+          dueAt: null,
+        }
+      )
+    }
+    const o = raw as Record<string, unknown>
+    const statusRaw = o.status
+    const status = VALID_ACTION_ITEM_STATUSES.includes(
+      statusRaw as IncidentReviewActionItemStatus,
+    )
+      ? (statusRaw as IncidentReviewActionItemStatus)
+      : (fb?.status ?? 'open')
+
+    let dueAt: string | null = null
+    if (o.dueAt === null) {
+      dueAt = null
+    } else if (typeof o.dueAt === 'string' && o.dueAt.trim()) {
+      dueAt = o.dueAt.trim()
+    } else if (fb?.dueAt) {
+      dueAt = fb.dueAt
+    }
+
+    return {
+      id:
+        typeof o.id === 'string' && o.id.trim()
+          ? o.id.trim()
+          : fb?.id ?? `ai-${index}`,
+      title: typeof o.title === 'string' ? o.title : fb?.title ?? '',
+      owner: typeof o.owner === 'string' ? o.owner : fb?.owner ?? '',
+      status,
+      dueAt,
+    }
+  })
+}
+
+function normalizeReview(
+  value: unknown,
+  fallback?: IncidentReview,
+): IncidentReview {
+  const base = fallback
+    ? {
+        ...fallback,
+        actionItems: fallback.actionItems.map((item) => ({ ...item })),
+      }
+    : { ...EMPTY_INCIDENT_REVIEW }
+  if (!value || typeof value !== 'object') {
+    return base
+  }
+  const record = value as Record<string, unknown>
+  const statusRaw = record.status
+  const status = VALID_REVIEW_STATUSES.includes(statusRaw as IncidentReviewStatus)
+    ? (statusRaw as IncidentReviewStatus)
+    : base.status
+
+  return {
+    summary: typeof record.summary === 'string' ? record.summary : base.summary,
+    rootCause:
+      typeof record.rootCause === 'string' ? record.rootCause : base.rootCause,
+    followUps:
+      typeof record.followUps === 'string' ? record.followUps : base.followUps,
+    status,
+    actionItems: normalizeActionItems(record.actionItems, base.actionItems),
+  }
 }
 
 function normalizeResolvedAt(
@@ -211,6 +340,10 @@ function normalizeIncident(
       incident.alertMergeCount >= 0
         ? incident.alertMergeCount
         : (fallback?.alertMergeCount ?? 0),
+    isMajorIncident: normalizeMajorIncident(
+      incident.isMajorIncident,
+      fallback?.isMajorIncident,
+    ),
     createdAt: createdAt ?? new Date().toISOString(),
     updatedAt: isNonEmptyString(incident.updatedAt)
       ? incident.updatedAt
@@ -218,6 +351,7 @@ function normalizeIncident(
     resolvedAt,
     timeline: normalizeTimeline(incident.timeline, fallback?.timeline),
     notes: normalizeNotes(incident.notes, fallback?.notes),
+    review: normalizeReview(incident.review, fallback?.review),
   }
 }
 
@@ -503,6 +637,61 @@ function assertLocalSeverityChangeAllowed(incident: Incident, severity: Severity
   }
 }
 
+function assertLocalReviewAllowed(incident: Incident) {
+  if (incident.status !== 'resolved') {
+    throw new IncidentsApiError(
+      'Only resolved incidents can have a post-incident review.',
+      409,
+    )
+  }
+}
+
+function assertLocalMajorAllowed(incident: Incident, isMajor: boolean) {
+  if (incident.isMajorIncident === isMajor) {
+    throw new IncidentsApiError(
+      isMajor
+        ? 'Incident is already marked as a major incident.'
+        : 'Incident is not marked as a major incident.',
+      409,
+    )
+  }
+}
+
+function createLocallyMajorIncident(
+  incident: Incident,
+  actor: string,
+  isMajor: boolean,
+) {
+  const now = new Date()
+  const event = createLocalTimelineEvent(
+    incident.id,
+    actor,
+    'updated',
+    isMajor
+      ? 'Marked as major incident'
+      : 'Cleared major incident flag',
+    now,
+  )
+
+  return {
+    ...cloneIncident(incident),
+    isMajorIncident: isMajor,
+    updatedAt: 'Just now',
+    timeline: [...incident.timeline.map((e) => ({ ...e })), event],
+  }
+}
+
+function createLocallyUpdatedReview(
+  incident: Incident,
+  review: IncidentReview,
+) {
+  return {
+    ...cloneIncident(incident),
+    review: { ...review },
+    updatedAt: 'Just now',
+  }
+}
+
 function createLocallyAnnotatedIncident(
   incident: Incident,
   author: string,
@@ -552,13 +741,13 @@ export async function getIncident(id: string): Promise<Incident> {
   return normalizeIncident(incident, getMockIncidentById(id) ?? undefined)
 }
 
-export async function resolveIncident(id: string): Promise<Incident | null> {
-  return resolveIncidentAction(id, { actor: 'OpsMate' })
+export async function resolveIncident(id: string, note?: string): Promise<Incident | null> {
+  return resolveIncidentAction(id, { note })
 }
 
 async function resolveIncidentAction(
   id: string,
-  payload: { actor: string; note?: string },
+  payload: { note?: string },
 ): Promise<Incident | null> {
   const incident = await requestJson<IncidentApiResponse>(`/${id}/resolve`, {
     method: 'PATCH',
@@ -572,7 +761,7 @@ async function resolveIncidentAction(
 
 export async function acknowledgeIncident(
   id: string,
-  payload: { actor: string; note?: string },
+  payload: { note?: string },
 ): Promise<Incident | null> {
   const incident = await requestJson<IncidentApiResponse>(`/${id}/acknowledge`, {
     method: 'PATCH',
@@ -586,7 +775,7 @@ export async function acknowledgeIncident(
 
 export async function reopenIncident(
   id: string,
-  payload: { actor: string; note?: string },
+  payload: { note?: string },
 ): Promise<Incident | null> {
   const incident = await requestJson<IncidentApiResponse>(`/${id}/reopen`, {
     method: 'PATCH',
@@ -600,7 +789,7 @@ export async function reopenIncident(
 
 export async function addIncidentNote(
   id: string,
-  payload: { author: string; content: string },
+  payload: { content: string },
 ): Promise<Incident | null> {
   const incident = await requestJson<IncidentApiResponse>(`/${id}/notes`, {
     method: 'POST',
@@ -614,7 +803,7 @@ export async function addIncidentNote(
 
 export async function assignIncident(
   id: string,
-  payload: { actor: string; assignee: string },
+  payload: { assignee: string },
 ): Promise<Incident | null> {
   const incident = await requestJson<IncidentApiResponse>(`/${id}/assign`, {
     method: 'PATCH',
@@ -626,9 +815,37 @@ export async function assignIncident(
     : null
 }
 
+export async function patchIncidentReview(
+  id: string,
+  payload: { review: IncidentReview },
+): Promise<Incident | null> {
+  const incident = await requestJson<IncidentApiResponse>(`/${id}/review`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+
+  return incident
+    ? normalizeIncident(incident, getMockIncidentById(id) ?? undefined)
+    : null
+}
+
+export async function patchIncidentMajor(
+  id: string,
+  payload: { isMajor: boolean },
+): Promise<Incident | null> {
+  const incident = await requestJson<IncidentApiResponse>(`/${id}/major`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+
+  return incident
+    ? normalizeIncident(incident, getMockIncidentById(id) ?? undefined)
+    : null
+}
+
 export async function changeIncidentSeverity(
   id: string,
-  payload: { actor: string; severity: Severity },
+  payload: { severity: Severity },
 ): Promise<Incident | null> {
   const incident = await requestJson<IncidentApiResponse>(`/${id}/severity`, {
     method: 'PATCH',
@@ -685,9 +902,22 @@ export async function loadIncident(
   }
 }
 
+export async function getIncidentWorkspaceEnrichment(
+  incidentId: string,
+): Promise<IncidentWorkspaceEnrichment> {
+  const data = await requestJson<IncidentWorkspaceEnrichment>(
+    `/${incidentId}/workspace-enrichment`,
+  )
+  if (!data) {
+    throw new IncidentsApiError('Empty workspace enrichment response.')
+  }
+  return data
+}
+
 export async function resolveIncidentWithFallback(
   incident: Incident,
-  payload: { actor: string; note?: string } = { actor: 'OpsMate' },
+  payload: { note?: string } = {},
+  attributionName: string,
 ): Promise<IncidentResult> {
   try {
     const updatedIncident = await resolveIncidentAction(incident.id, payload)
@@ -705,7 +935,7 @@ export async function resolveIncidentWithFallback(
     }
   } catch {
     return {
-      incident: createLocallyResolvedIncident(incident, payload.actor, payload.note),
+      incident: createLocallyResolvedIncident(incident, attributionName, payload.note),
       source: 'mock',
       warning: INCIDENT_RESOLVE_FALLBACK_MESSAGE,
     }
@@ -714,7 +944,8 @@ export async function resolveIncidentWithFallback(
 
 export async function acknowledgeIncidentWithFallback(
   incident: Incident,
-  payload: { actor: string; note?: string },
+  payload: { note?: string },
+  attributionName: string,
 ): Promise<IncidentResult> {
   try {
     const updatedIncident = await acknowledgeIncident(incident.id, payload)
@@ -734,7 +965,7 @@ export async function acknowledgeIncidentWithFallback(
     return {
       incident: createLocallyAcknowledgedIncident(
         incident,
-        payload.actor,
+        attributionName,
         payload.note,
       ),
       source: 'mock',
@@ -745,7 +976,8 @@ export async function acknowledgeIncidentWithFallback(
 
 export async function assignIncidentWithFallback(
   incident: Incident,
-  payload: { actor: string; assignee: string },
+  payload: { assignee: string },
+  attributionName: string,
 ): Promise<IncidentResult> {
   try {
     const updatedIncident = await assignIncident(incident.id, payload)
@@ -771,7 +1003,7 @@ export async function assignIncidentWithFallback(
     return {
       incident: createLocallyAssignedIncident(
         incident,
-        payload.actor,
+        attributionName,
         payload.assignee,
       ),
       source: 'mock',
@@ -780,9 +1012,81 @@ export async function assignIncidentWithFallback(
   }
 }
 
+export async function patchIncidentReviewWithFallback(
+  incident: Incident,
+  payload: { review: IncidentReview },
+): Promise<IncidentResult> {
+  try {
+    const updatedIncident = await patchIncidentReview(incident.id, payload)
+
+    if (updatedIncident) {
+      return {
+        incident: updatedIncident,
+        source: 'backend',
+      }
+    }
+
+    return {
+      incident: await getIncident(incident.id),
+      source: 'backend',
+    }
+  } catch (error) {
+    if (error instanceof IncidentsApiError && error.status !== undefined) {
+      throw error
+    }
+
+    assertLocalReviewAllowed(incident)
+
+    return {
+      incident: createLocallyUpdatedReview(incident, payload.review),
+      source: 'mock',
+      warning: INCIDENT_REVIEW_FALLBACK_MESSAGE,
+    }
+  }
+}
+
+export async function patchIncidentMajorWithFallback(
+  incident: Incident,
+  payload: { isMajor: boolean },
+  attributionName: string,
+): Promise<IncidentResult> {
+  try {
+    const updatedIncident = await patchIncidentMajor(incident.id, payload)
+
+    if (updatedIncident) {
+      return {
+        incident: updatedIncident,
+        source: 'backend',
+      }
+    }
+
+    return {
+      incident: await getIncident(incident.id),
+      source: 'backend',
+    }
+  } catch (error) {
+    if (error instanceof IncidentsApiError && error.status !== undefined) {
+      throw error
+    }
+
+    assertLocalMajorAllowed(incident, payload.isMajor)
+
+    return {
+      incident: createLocallyMajorIncident(
+        incident,
+        attributionName,
+        payload.isMajor,
+      ),
+      source: 'mock',
+      warning: INCIDENT_MAJOR_FALLBACK_MESSAGE,
+    }
+  }
+}
+
 export async function reopenIncidentWithFallback(
   incident: Incident,
-  payload: { actor: string; note?: string },
+  payload: { note?: string },
+  attributionName: string,
 ): Promise<IncidentResult> {
   try {
     const updatedIncident = await reopenIncident(incident.id, payload)
@@ -800,7 +1104,7 @@ export async function reopenIncidentWithFallback(
     }
   } catch {
     return {
-      incident: createLocallyReopenedIncident(incident, payload.actor, payload.note),
+      incident: createLocallyReopenedIncident(incident, attributionName, payload.note),
       source: 'mock',
       warning: INCIDENT_REOPEN_FALLBACK_MESSAGE,
     }
@@ -809,7 +1113,8 @@ export async function reopenIncidentWithFallback(
 
 export async function changeIncidentSeverityWithFallback(
   incident: Incident,
-  payload: { actor: string; severity: Severity },
+  payload: { severity: Severity },
+  attributionName: string,
 ): Promise<IncidentResult> {
   try {
     const updatedIncident = await changeIncidentSeverity(incident.id, payload)
@@ -835,7 +1140,7 @@ export async function changeIncidentSeverityWithFallback(
     return {
       incident: createLocallySeverityChangedIncident(
         incident,
-        payload.actor,
+        attributionName,
         payload.severity,
       ),
       source: 'mock',
@@ -846,7 +1151,8 @@ export async function changeIncidentSeverityWithFallback(
 
 export async function addIncidentNoteWithFallback(
   incident: Incident,
-  payload: { author: string; content: string },
+  payload: { content: string },
+  attributionName: string,
 ): Promise<IncidentResult> {
   try {
     const updatedIncident = await addIncidentNote(incident.id, payload)
@@ -866,7 +1172,7 @@ export async function addIncidentNoteWithFallback(
     return {
       incident: createLocallyAnnotatedIncident(
         incident,
-        payload.author,
+        attributionName,
         payload.content,
       ),
       source: 'mock',

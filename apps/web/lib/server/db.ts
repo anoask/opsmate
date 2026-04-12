@@ -75,7 +75,9 @@ function createSchema(db: Database.Database) {
       timeline_json TEXT NOT NULL,
       notes_json TEXT NOT NULL,
       alert_dedup_key TEXT,
-      alert_merge_count INTEGER NOT NULL DEFAULT 0
+      alert_merge_count INTEGER NOT NULL DEFAULT 0,
+      review_json TEXT,
+      is_major INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS incident_events (
@@ -119,11 +121,24 @@ function createSchema(db: Database.Database) {
       FOREIGN KEY (event_id) REFERENCES incident_events(id)
     );
 
+    CREATE TABLE IF NOT EXISTS incident_notification_deliveries (
+      id TEXT PRIMARY KEY,
+      notification_id TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      status TEXT NOT NULL,
+      detail TEXT,
+      attempted_at TEXT NOT NULL,
+      FOREIGN KEY (notification_id) REFERENCES incident_notifications(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_incident_notifications_created_at
       ON incident_notifications(created_at DESC);
 
     CREATE INDEX IF NOT EXISTS idx_incident_notifications_read_at
       ON incident_notifications(read_at);
+
+    CREATE INDEX IF NOT EXISTS idx_incident_notification_deliveries_notification_id
+      ON incident_notification_deliveries(notification_id);
 
     CREATE TABLE IF NOT EXISTS runbooks (
       id TEXT PRIMARY KEY,
@@ -150,8 +165,31 @@ function createSchema(db: Database.Database) {
       email TEXT NOT NULL UNIQUE,
       role TEXT NOT NULL,
       status TEXT NOT NULL,
-      joined_at TEXT NOT NULL
+      joined_at TEXT NOT NULL,
+      notify_critical INTEGER NOT NULL DEFAULT 1,
+      notify_assignment INTEGER NOT NULL DEFAULT 1,
+      notify_lifecycle INTEGER NOT NULL DEFAULT 1
     );
+
+    CREATE TABLE IF NOT EXISTS alert_ingests (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      category TEXT NOT NULL,
+      title TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      description TEXT NOT NULL,
+      dedup_key TEXT NOT NULL,
+      disposition TEXT NOT NULL,
+      incident_id TEXT NOT NULL,
+      ingested_at TEXT NOT NULL,
+      FOREIGN KEY (incident_id) REFERENCES incidents(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_alert_ingests_ingested_at
+      ON alert_ingests(ingested_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_alert_ingests_incident_id
+      ON alert_ingests(incident_id);
   `)
 }
 
@@ -199,6 +237,38 @@ function ensureIncidentIndexes(db: Database.Database) {
   `)
 }
 
+function ensureIncidentReviewColumn(db: Database.Database) {
+  if (!hasColumn(db, 'incidents', 'review_json')) {
+    db.exec('ALTER TABLE incidents ADD COLUMN review_json TEXT')
+  }
+}
+
+function ensureIncidentMajorColumn(db: Database.Database) {
+  if (!hasColumn(db, 'incidents', 'is_major')) {
+    db.exec(
+      'ALTER TABLE incidents ADD COLUMN is_major INTEGER NOT NULL DEFAULT 0',
+    )
+  }
+}
+
+function ensureUserNotificationColumns(db: Database.Database) {
+  if (!hasColumn(db, 'users', 'notify_critical')) {
+    db.exec(
+      'ALTER TABLE users ADD COLUMN notify_critical INTEGER NOT NULL DEFAULT 1',
+    )
+  }
+  if (!hasColumn(db, 'users', 'notify_assignment')) {
+    db.exec(
+      'ALTER TABLE users ADD COLUMN notify_assignment INTEGER NOT NULL DEFAULT 1',
+    )
+  }
+  if (!hasColumn(db, 'users', 'notify_lifecycle')) {
+    db.exec(
+      'ALTER TABLE users ADD COLUMN notify_lifecycle INTEGER NOT NULL DEFAULT 1',
+    )
+  }
+}
+
 function seedIncidents(db: Database.Database) {
   const parsedIncidents = incidentsListDtoSchema.parse(getCurrentDemoIncidents())
   const upsertIncident = db.prepare(`
@@ -218,7 +288,9 @@ function seedIncidents(db: Database.Database) {
       timeline_json,
       notes_json,
       alert_dedup_key,
-      alert_merge_count
+      alert_merge_count,
+      review_json,
+      is_major
     ) VALUES (
       @id,
       @source,
@@ -235,7 +307,9 @@ function seedIncidents(db: Database.Database) {
       @timeline_json,
       @notes_json,
       @alert_dedup_key,
-      @alert_merge_count
+      @alert_merge_count,
+      @review_json,
+      @is_major
     )
     ON CONFLICT(id) DO UPDATE SET
       source = excluded.source,
@@ -250,7 +324,9 @@ function seedIncidents(db: Database.Database) {
       updated_at = excluded.updated_at,
       resolved_at = excluded.resolved_at,
       timeline_json = excluded.timeline_json,
-      notes_json = excluded.notes_json
+      notes_json = excluded.notes_json,
+      review_json = COALESCE(incidents.review_json, excluded.review_json),
+      is_major = excluded.is_major
   `)
 
   const seedTransaction = db.transaction((incidents: IncidentDto[]) => {
@@ -272,6 +348,8 @@ function seedIncidents(db: Database.Database) {
         notes_json: JSON.stringify(incident.notes),
         alert_dedup_key: null,
         alert_merge_count: incident.alertMergeCount,
+        review_json: JSON.stringify(incident.review),
+        is_major: incident.isMajorIncident ? 1 : 0,
       })
     }
   })
@@ -623,6 +701,15 @@ function initializeDatabase() {
 
     ensureIncidentIndexes(db)
     console.info('[db] ensured incident indexes')
+
+    ensureUserNotificationColumns(db)
+    console.info('[db] ensured user notification preference columns')
+
+    ensureIncidentReviewColumn(db)
+    console.info('[db] ensured incident review column')
+
+    ensureIncidentMajorColumn(db)
+    console.info('[db] ensured incident major column')
 
     const refreshedSeedIncidents = seedIncidents(db)
     console.info('[db] seeded incidents', {

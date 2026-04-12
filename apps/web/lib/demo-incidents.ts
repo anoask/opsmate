@@ -8,6 +8,10 @@ function cloneIncident(incident: Incident): Incident {
     ...incident,
     timeline: incident.timeline.map((event) => ({ ...event })),
     notes: incident.notes.map((note) => ({ ...note })),
+    review: {
+      ...incident.review,
+      actionItems: incident.review.actionItems.map((item) => ({ ...item })),
+    },
   }
 }
 

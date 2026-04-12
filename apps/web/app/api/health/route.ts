@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/server/db'
+import { getWorkspaceConfigFlags } from '@/lib/server/workspace-config-flags'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +14,7 @@ export async function GET() {
       status: 'ok',
       service: 'opsmate-web',
       datastore: 'sqlite',
+      workspace: getWorkspaceConfigFlags({ databaseReachable: true }),
     })
   } catch (error) {
     console.error('[health] healthcheck failed', { error })
@@ -22,6 +24,7 @@ export async function GET() {
         status: 'error',
         service: 'opsmate-web',
         datastore: 'sqlite',
+        workspace: getWorkspaceConfigFlags({ databaseReachable: false }),
       },
       { status: 500 },
     )

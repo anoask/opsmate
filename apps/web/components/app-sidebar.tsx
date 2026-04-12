@@ -3,9 +3,13 @@
 import {
   LayoutDashboard,
   AlertTriangle,
+  History,
   BookOpen,
   BarChart3,
+  Bell,
+  ListTodo,
   Settings,
+  Users,
   Zap,
 } from "lucide-react"
 import Link from "next/link"
@@ -15,7 +19,11 @@ import { cn } from "@/lib/utils"
 const navItems = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Incidents", href: "/incidents", icon: AlertTriangle },
+  { name: "Follow-ups", href: "/follow-ups", icon: ListTodo },
+  { name: "Alerts History", href: "/alerts", icon: History },
   { name: "Runbooks", href: "/runbooks", icon: BookOpen },
+  { name: "Team", href: "/team", icon: Users },
+  { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Metrics", href: "/metrics", icon: BarChart3 },
   { name: "Settings", href: "/settings", icon: Settings },
 ]

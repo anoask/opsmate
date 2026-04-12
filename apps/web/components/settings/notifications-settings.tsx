@@ -1,8 +1,10 @@
 'use client'
 
 import type { Notification } from '@/lib/types'
+import Link from 'next/link'
 
 import { notificationRules } from '@/lib/mock-data'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,7 +25,17 @@ export function NotificationsSettings() {
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <div>
           <CardTitle>Notification Rules</CardTitle>
-          <CardDescription>Configure when and how you receive alerts</CardDescription>
+          <CardDescription>
+            Demo list for layout only—toggles do not persist. Real Slack delivery uses{' '}
+            <Link href="/team" className="text-primary underline-offset-2 hover:underline">
+              Team
+            </Link>{' '}
+            (critical, assignment, lifecycle) plus server routing; audit outcomes in{' '}
+            <Link href="/notifications" className="text-primary underline-offset-2 hover:underline">
+              Notification center
+            </Link>
+            .
+          </CardDescription>
         </div>
         <Button size="sm" className="gap-2">
           <Plus className="w-4 h-4" />
@@ -31,6 +43,13 @@ export function NotificationsSettings() {
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
+        <Alert className="border-border/70 bg-secondary/30">
+          <AlertTitle className="text-sm">Illustrative rules</AlertTitle>
+          <AlertDescription className="text-xs leading-relaxed text-muted-foreground">
+            To change who gets pinged, edit teammates on Team. Alert ingestion and incident workflows
+            are separate from this panel.
+          </AlertDescription>
+        </Alert>
         {notificationRules.map((rule) => (
           <div key={rule.id} className="flex items-center justify-between rounded-lg border border-border/60 bg-secondary/35 p-4 shadow-sm shadow-black/5 transition-colors hover:bg-secondary/50">
             <div className="flex-1">

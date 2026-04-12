@@ -1,14 +1,21 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { AlertTriangle, RefreshCw, ServerCrash } from "lucide-react"
+import { useActor, OPSMATE_DEFAULT_ACTOR_NAME } from "@/components/actor-context"
 import { AppShell } from "@/components/app-shell"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { IncidentsFilters } from "@/components/incidents/incidents-filters"
+import {
+  IncidentsOperatorChips,
+  type IncidentsOwnershipQuickFilter,
+} from "@/components/incidents/incidents-operator-chips"
 import { IncidentsFullTable } from "@/components/incidents/incidents-full-table"
+import { IncidentsStatusBoard } from "@/components/incidents/incidents-status-board"
 import { IncidentDetailSheet } from "@/components/incidents/incident-detail-sheet"
 import { Spinner } from "@/components/ui/spinner"
 import {
@@ -16,17 +23,53 @@ import {
   assignIncidentWithFallback,
   addIncidentNoteWithFallback,
   changeIncidentSeverityWithFallback,
+  getIncidentWorkspaceEnrichment,
   type IncidentsDataSource,
   loadIncident,
   loadIncidents,
+  patchIncidentMajorWithFallback,
+  patchIncidentReviewWithFallback,
   reopenIncidentWithFallback,
   resolveIncidentWithFallback,
 } from "@/lib/api/incidents"
+import {
+  getIncidentRunbookExecutionContext,
+  startRunbookExecutionFromIncident,
+  updateRunbookExecution,
+} from "@/lib/api/runbooks"
+import { fetchUsers } from "@/lib/api/users"
 import { teamMembers } from "@/lib/mock-data"
-import type { Incident, Severity } from "@/lib/types"
+import type {
+  Incident,
+  IncidentReview,
+  IncidentRunbookExecutionContext,
+  IncidentWorkspaceEnrichment,
+  RunbookExecutionStatus,
+  Severity,
+} from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 export default function IncidentsPage() {
-  const incidentActor = "OpsMate Bot"
+  return (
+    <AppShell mainClassName="p-6">
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+            <Spinner className="size-4" />
+            Loading incidents…
+          </div>
+        }
+      >
+        <IncidentsPageInner />
+      </Suspense>
+    </AppShell>
+  )
+}
+
+function IncidentsPageInner() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const { actorName: incidentActor, can } = useActor()
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -34,26 +77,113 @@ export default function IncidentsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [severityFilter, setSeverityFilter] = useState("all")
   const [sourceFilter, setSourceFilter] = useState("all")
+  const [majorFilter, setMajorFilter] = useState("all")
+  const [ownershipFilter, setOwnershipFilter] =
+    useState<IncidentsOwnershipQuickFilter>("all")
+  const [incidentsView, setIncidentsView] = useState<"table" | "board">("table")
   const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadWarning, setLoadWarning] = useState<string | null>(null)
   const [dataSource, setDataSource] = useState<IncidentsDataSource>("backend")
   const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
-  const [activeMutation, setActiveMutation] = useState<
-    "acknowledge" | "assign" | "severity" | "resolve" | "reopen" | "note" | null
-  >(null)
-  const availableAssignees = useMemo(
-    () =>
-      teamMembers
-        .filter((member) => member.status === "active")
-        .map((member) => member.name),
-    [],
+  const [runbookExecutionContext, setRunbookExecutionContext] =
+    useState<IncidentRunbookExecutionContext | null>(null)
+  const [isRunbookCtxLoading, setIsRunbookCtxLoading] = useState(false)
+  const [isRunbookCtxPatching, setIsRunbookCtxPatching] = useState(false)
+  const [workspaceEnrichment, setWorkspaceEnrichment] =
+    useState<IncidentWorkspaceEnrichment | null>(null)
+  const [isWorkspaceEnrichmentLoading, setIsWorkspaceEnrichmentLoading] =
+    useState(false)
+  const [workspaceEnrichmentError, setWorkspaceEnrichmentError] = useState<string | null>(
+    null,
   )
+  const [activeMutation, setActiveMutation] = useState<
+    | "acknowledge"
+    | "assign"
+    | "severity"
+    | "resolve"
+    | "reopen"
+    | "note"
+    | "review"
+    | "major"
+    | "runbook_execution"
+    | null
+  >(null)
+  const [availableAssignees, setAvailableAssignees] = useState<string[]>(() =>
+    teamMembers
+      .filter((member) => member.status === "active")
+      .map((member) => member.name),
+  )
+  const [assigneesFromLiveDirectory, setAssigneesFromLiveDirectory] = useState(false)
   const availableSeverities = useMemo<Severity[]>(
     () => ["critical", "high", "medium", "low"],
     [],
   )
+
+  const refreshRunbookExecutionContext = useCallback(async () => {
+    const incident = selectedIncident
+    if (!incident || dataSource === "mock" || !incident.assignedRunbook) {
+      setRunbookExecutionContext(null)
+      return
+    }
+
+    setIsRunbookCtxLoading(true)
+    try {
+      const ctx = await getIncidentRunbookExecutionContext(incident.id)
+      setRunbookExecutionContext(ctx)
+    } catch {
+      setRunbookExecutionContext(null)
+    } finally {
+      setIsRunbookCtxLoading(false)
+    }
+  }, [selectedIncident, dataSource])
+
+  useEffect(() => {
+    if (sheetOpen && selectedIncident && dataSource === "backend") {
+      void refreshRunbookExecutionContext()
+    }
+    if (!sheetOpen) {
+      setRunbookExecutionContext(null)
+    }
+  }, [sheetOpen, selectedIncident, dataSource, refreshRunbookExecutionContext])
+
+  const refreshWorkspaceEnrichment = useCallback(async () => {
+    const incident = selectedIncident
+    if (!incident || dataSource === "mock") {
+      setWorkspaceEnrichment(null)
+      setWorkspaceEnrichmentError(null)
+      setIsWorkspaceEnrichmentLoading(false)
+      return
+    }
+
+    setIsWorkspaceEnrichmentLoading(true)
+    setWorkspaceEnrichment(null)
+    setWorkspaceEnrichmentError(null)
+    try {
+      const data = await getIncidentWorkspaceEnrichment(incident.id)
+      setWorkspaceEnrichment(data)
+    } catch {
+      setWorkspaceEnrichment(null)
+      setWorkspaceEnrichmentError(
+        "Linked alerts and notifications could not be loaded.",
+      )
+    } finally {
+      setIsWorkspaceEnrichmentLoading(false)
+    }
+  }, [selectedIncident, dataSource])
+
+  useEffect(() => {
+    if (!sheetOpen) {
+      setWorkspaceEnrichment(null)
+      setWorkspaceEnrichmentError(null)
+      setIsWorkspaceEnrichmentLoading(false)
+      return
+    }
+    if (dataSource === "backend") {
+      void refreshWorkspaceEnrichment()
+    }
+  }, [sheetOpen, dataSource, refreshWorkspaceEnrichment])
 
   const refreshIncidents = useCallback(async () => {
     setIsInitialLoading(true)
@@ -77,6 +207,68 @@ export default function IncidentsPage() {
   useEffect(() => {
     void refreshIncidents()
   }, [refreshIncidents])
+
+  useEffect(() => {
+    if (
+      incidentActor.trim() === OPSMATE_DEFAULT_ACTOR_NAME &&
+      ownershipFilter === "mine"
+    ) {
+      setOwnershipFilter("all")
+    }
+  }, [incidentActor, ownershipFilter])
+
+  useEffect(() => {
+    const quick = searchParams.get("quick")?.trim()
+    if (quick === "major-active") {
+      setMajorFilter("major")
+      setActiveTab("active")
+    } else if (quick === "major-review") {
+      setMajorFilter("major")
+      setActiveTab("resolved")
+    } else if (quick === "major-board") {
+      setMajorFilter("major")
+      setActiveTab("active")
+      setIncidentsView("board")
+    } else {
+      return
+    }
+
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("quick")
+    const qs = params.toString()
+    router.replace(qs ? `/incidents?${qs}` : "/incidents", { scroll: false })
+  }, [searchParams, router])
+
+  useEffect(() => {
+    const id = searchParams.get("incident")?.trim()
+    if (!id || incidents.length === 0) {
+      return
+    }
+    const match = incidents.find((incident) => incident.id === id)
+    if (!match) {
+      return
+    }
+    setSelectedIncident(match)
+    setSheetOpen(true)
+    router.replace("/incidents", { scroll: false })
+  }, [searchParams, incidents, router])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const users = await fetchUsers()
+        const names = users
+          .filter((u) => u.status === "active" && u.id !== "sys-opsmate-bot")
+          .map((u) => u.name)
+        if (names.length > 0) {
+          setAvailableAssignees(names)
+          setAssigneesFromLiveDirectory(true)
+        }
+      } catch {
+        /* keep demo assignee names */
+      }
+    })()
+  }, [])
 
   const filteredIncidents = useMemo(() => {
     return incidents.filter((incident) => {
@@ -106,9 +298,34 @@ export default function IncidentsPage() {
         return false
       }
 
+      if (majorFilter === "major" && !incident.isMajorIncident) {
+        return false
+      }
+
+      if (ownershipFilter === "mine") {
+        const mineKey = incidentActor.trim().toLowerCase()
+        const assigneeKey = (incident.assignedTo ?? "").trim().toLowerCase()
+        if (assigneeKey !== mineKey) {
+          return false
+        }
+      }
+
+      if (ownershipFilter === "unassigned" && incident.assignedTo?.trim()) {
+        return false
+      }
+
       return true
     })
-  }, [incidents, activeTab, searchQuery, severityFilter, sourceFilter])
+  }, [
+    incidents,
+    activeTab,
+    searchQuery,
+    severityFilter,
+    sourceFilter,
+    majorFilter,
+    ownershipFilter,
+    incidentActor,
+  ])
 
   const handleSelectIncident = async (incident: Incident) => {
     setSelectedIncident(incident)
@@ -145,9 +362,7 @@ export default function IncidentsPage() {
     setDetailError(null)
 
     try {
-      const result = await resolveIncidentWithFallback(selectedIncident, {
-        actor: incidentActor,
-      })
+      const result = await resolveIncidentWithFallback(selectedIncident, {}, incidentActor)
 
       setSelectedIncident(result.incident)
       setIncidents((currentIncidents) =>
@@ -177,9 +392,7 @@ export default function IncidentsPage() {
     setDetailError(null)
 
     try {
-      const result = await acknowledgeIncidentWithFallback(selectedIncident, {
-        actor: incidentActor,
-      })
+      const result = await acknowledgeIncidentWithFallback(selectedIncident, {}, incidentActor)
 
       setSelectedIncident(result.incident)
       setIncidents((currentIncidents) =>
@@ -209,9 +422,7 @@ export default function IncidentsPage() {
     setDetailError(null)
 
     try {
-      const result = await reopenIncidentWithFallback(selectedIncident, {
-        actor: incidentActor,
-      })
+      const result = await reopenIncidentWithFallback(selectedIncident, {}, incidentActor)
 
       setSelectedIncident(result.incident)
       setIncidents((currentIncidents) =>
@@ -241,10 +452,11 @@ export default function IncidentsPage() {
     setDetailError(null)
 
     try {
-      const result = await assignIncidentWithFallback(selectedIncident, {
-        actor: incidentActor,
-        assignee,
-      })
+      const result = await assignIncidentWithFallback(
+        selectedIncident,
+        { assignee },
+        incidentActor,
+      )
 
       setSelectedIncident(result.incident)
       setIncidents((currentIncidents) =>
@@ -274,10 +486,11 @@ export default function IncidentsPage() {
     setDetailError(null)
 
     try {
-      const result = await changeIncidentSeverityWithFallback(selectedIncident, {
-        actor: incidentActor,
-        severity,
-      })
+      const result = await changeIncidentSeverityWithFallback(
+        selectedIncident,
+        { severity },
+        incidentActor,
+      )
 
       setSelectedIncident(result.incident)
       setIncidents((currentIncidents) =>
@@ -298,6 +511,72 @@ export default function IncidentsPage() {
     }
   }
 
+  const handleSaveIncidentReview = async (review: IncidentReview) => {
+    if (!selectedIncident) {
+      return
+    }
+
+    setActiveMutation("review")
+    setDetailError(null)
+
+    try {
+      const result = await patchIncidentReviewWithFallback(selectedIncident, { review })
+
+      setSelectedIncident(result.incident)
+      setIncidents((currentIncidents) =>
+        currentIncidents.map((incident) =>
+          incident.id === result.incident.id ? result.incident : incident,
+        ),
+      )
+
+      if (result.warning) {
+        setDataSource("mock")
+        setLoadWarning(result.warning)
+        setDetailError("Review was saved locally using demo data.")
+      }
+    } catch {
+      setDetailError("Unable to save the review right now. Please try again.")
+    } finally {
+      setActiveMutation(null)
+    }
+  }
+
+  const handleToggleMajorIncident = async (nextMajor: boolean) => {
+    if (!selectedIncident) {
+      return
+    }
+
+    setActiveMutation("major")
+    setDetailError(null)
+
+    try {
+      const result = await patchIncidentMajorWithFallback(
+        selectedIncident,
+        { isMajor: nextMajor },
+        incidentActor,
+      )
+
+      setSelectedIncident(result.incident)
+      setIncidents((currentIncidents) =>
+        currentIncidents.map((incident) =>
+          incident.id === result.incident.id ? result.incident : incident,
+        ),
+      )
+
+      if (result.warning) {
+        setDataSource("mock")
+        setLoadWarning(result.warning)
+        setDetailError("Major incident flag was updated locally using demo data.")
+      }
+    } catch {
+      setDetailError(
+        "Unable to update the major incident flag right now. Please try again.",
+      )
+    } finally {
+      setActiveMutation(null)
+    }
+  }
+
   const handleAddIncidentNote = async (content: string) => {
     if (!selectedIncident) {
       return
@@ -307,10 +586,11 @@ export default function IncidentsPage() {
     setDetailError(null)
 
     try {
-      const result = await addIncidentNoteWithFallback(selectedIncident, {
-        author: incidentActor,
-        content,
-      })
+      const result = await addIncidentNoteWithFallback(
+        selectedIncident,
+        { content },
+        incidentActor,
+      )
 
       setSelectedIncident(result.incident)
       setIncidents((currentIncidents) =>
@@ -332,6 +612,52 @@ export default function IncidentsPage() {
     }
   }
 
+  const handleStartRunbookExecution = async () => {
+    if (!selectedIncident) {
+      return
+    }
+
+    setActiveMutation("runbook_execution")
+    setDetailError(null)
+
+    try {
+      await startRunbookExecutionFromIncident(selectedIncident.id)
+      await refreshRunbookExecutionContext()
+    } catch {
+      setDetailError(
+        "Unable to start runbook execution for this incident right now.",
+      )
+    } finally {
+      setActiveMutation(null)
+    }
+  }
+
+  const handlePatchRunbookExecution = async (input: {
+    runbookId: string
+    executionId: string
+    completedStepIds?: string[]
+    status?: RunbookExecutionStatus
+  }) => {
+    if (!selectedIncident || dataSource === "mock") {
+      return
+    }
+
+    setIsRunbookCtxPatching(true)
+    setDetailError(null)
+
+    try {
+      await updateRunbookExecution(input.runbookId, input.executionId, {
+        completedStepIds: input.completedStepIds,
+        status: input.status,
+      })
+      await refreshRunbookExecutionContext()
+    } catch {
+      setDetailError("Unable to update runbook execution.")
+    } finally {
+      setIsRunbookCtxPatching(false)
+    }
+  }
+
   const handleSheetOpenChange = (open: boolean) => {
     setSheetOpen(open)
 
@@ -339,6 +665,9 @@ export default function IncidentsPage() {
       setDetailError(null)
       setIsDetailLoading(false)
       setActiveMutation(null)
+      setWorkspaceEnrichment(null)
+      setWorkspaceEnrichmentError(null)
+      setIsWorkspaceEnrichmentLoading(false)
     }
   }
 
@@ -379,6 +708,17 @@ export default function IncidentsPage() {
       )
     }
 
+    if (incidentsView === "board") {
+      return (
+        <IncidentsStatusBoard
+          incidents={filteredIncidents}
+          onSelectIncident={(incident) => {
+            void handleSelectIncident(incident)
+          }}
+        />
+      )
+    }
+
     return (
       <IncidentsFullTable
         incidents={filteredIncidents}
@@ -390,7 +730,7 @@ export default function IncidentsPage() {
   }
 
   return (
-    <AppShell mainClassName="p-6">
+    <>
       <div className="mx-auto max-w-7xl space-y-8">
         {/* Header */}
         <div className="space-y-1.5">
@@ -412,8 +752,8 @@ export default function IncidentsPage() {
 
         {/* Tabs and Filters */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <TabsList className="h-auto rounded-lg border border-border/70 bg-secondary/60 p-1">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <TabsList className="h-auto w-fit rounded-lg border border-border/70 bg-secondary/60 p-1">
               <TabsTrigger value="all" className="px-3.5 py-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 All ({incidents.length})
               </TabsTrigger>
@@ -424,9 +764,44 @@ export default function IncidentsPage() {
                 Resolved ({resolvedCount})
               </TabsTrigger>
             </TabsList>
+            <div
+              className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3"
+              role="group"
+              aria-label="Incident list layout"
+            >
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                Layout
+              </span>
+              <div className="inline-flex h-auto rounded-lg border border-border/70 bg-secondary/60 p-1">
+                <button
+                  type="button"
+                  onClick={() => setIncidentsView("table")}
+                  className={cn(
+                    "rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors",
+                    incidentsView === "table"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  Table
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIncidentsView("board")}
+                  className={cn(
+                    "rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors",
+                    incidentsView === "board"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  Command board
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-5">
+          <div className="mt-5 space-y-3">
             <IncidentsFilters
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
@@ -434,6 +809,18 @@ export default function IncidentsPage() {
               onSeverityChange={setSeverityFilter}
               sourceFilter={sourceFilter}
               onSourceChange={setSourceFilter}
+              majorFilter={majorFilter}
+              onMajorChange={setMajorFilter}
+            />
+            <IncidentsOperatorChips
+              ownershipFilter={ownershipFilter}
+              onOwnershipFilterChange={setOwnershipFilter}
+              majorFilter={majorFilter}
+              onMajorFilterChange={setMajorFilter}
+              activeTab={activeTab}
+              onActiveTabChange={setActiveTab}
+              actorName={incidentActor}
+              defaultActorName={OPSMATE_DEFAULT_ACTOR_NAME}
             />
           </div>
 
@@ -462,6 +849,9 @@ export default function IncidentsPage() {
         isResolving={activeMutation === "resolve"}
         isReopening={activeMutation === "reopen"}
         isAddingNote={activeMutation === "note"}
+        isSavingReview={activeMutation === "review"}
+        isTogglingMajor={activeMutation === "major"}
+        isStartingRunbookExecution={activeMutation === "runbook_execution"}
         availableAssignees={availableAssignees}
         availableSeverities={availableSeverities}
         onAcknowledge={() => void handleAcknowledgeIncident()}
@@ -470,7 +860,22 @@ export default function IncidentsPage() {
         onResolve={() => void handleResolveIncident()}
         onReopen={() => void handleReopenIncident()}
         onAddNote={handleAddIncidentNote}
+        onSaveReview={(review) => void handleSaveIncidentReview(review)}
+        onToggleMajor={(next) => void handleToggleMajorIncident(next)}
+        onStartRunbookExecution={() => void handleStartRunbookExecution()}
+        runbookExecutionContext={runbookExecutionContext}
+        isRunbookExecutionLoading={isRunbookCtxLoading}
+        onRefreshRunbookExecution={() => void refreshRunbookExecutionContext()}
+        onPatchRunbookExecution={(input) => void handlePatchRunbookExecution(input)}
+        isPatchingRunbookExecution={isRunbookCtxPatching}
+        workspaceEnrichmentLive={dataSource === "backend"}
+        workspaceEnrichment={workspaceEnrichment}
+        isWorkspaceEnrichmentLoading={isWorkspaceEnrichmentLoading}
+        workspaceEnrichmentError={workspaceEnrichmentError}
+        showTeamOwnershipHint={assigneesFromLiveDirectory}
+        canMutateIncidents={can("incidents:write")}
+        canMutateRunbookExecution={can("runbooks:execute")}
       />
-    </AppShell>
+    </>
   )
 }

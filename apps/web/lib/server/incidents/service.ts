@@ -8,13 +8,18 @@ import {
   listStoredIncidents,
   type StoredIncidentEventRecord,
 } from '@/lib/server/incidents/store'
+import { assertActorPermission } from '@/lib/server/permissions'
 import { resolveActorIdentity } from '@/lib/server/users/store'
 import {
   alertIngestInputSchema,
   type AlertIngestInput,
+  emptyIncidentReview,
   incidentAssignInputSchema,
   incidentLifecycleActionInputSchema,
   incidentNoteCreateInputSchema,
+  incidentMajorInputSchema,
+  incidentReviewSchema,
+  incidentReviewUpdateInputSchema,
   incidentSeverityChangeInputSchema,
   type IncidentAssignInput,
   type IncidentListQuery,
@@ -25,9 +30,12 @@ import {
   type IncidentNoteCreateInput,
   type IncidentSeverityChangeInput,
   type IncidentDto,
+  type IncidentMajorInput,
+  type IncidentReviewUpdateInput,
 } from '@/lib/server/incidents/schema'
 import { deliverSlackNotificationsBestEffort } from '@/lib/server/notifications/slack'
 import type { StoredIncidentNotificationRecord } from '@/lib/server/notifications/store'
+import { recordAlertIngestHistory } from '@/lib/server/alerts/store'
 
 type LifecycleTimelineEvent = IncidentDto['timeline'][number] & {
   createdAt: string
@@ -147,6 +155,18 @@ function normalizeLifecycleActor(actor: string) {
   return resolveActorIdentity(actor, 'OpsMate Bot')
 }
 
+function recordAlertIngestHistorySafe(input: Parameters<typeof recordAlertIngestHistory>[0]) {
+  try {
+    recordAlertIngestHistory(input)
+  } catch (error) {
+    console.warn('[alerts] failed to record ingest history', {
+      incidentId: input.incidentId,
+      disposition: input.disposition,
+      error,
+    })
+  }
+}
+
 function createCommentMutation(
   incident: IncidentDto,
   actor: string,
@@ -186,6 +206,7 @@ function persistLifecycleMutation(
     expectedCurrentAssignedTo?: string | null
     expectedCurrentSeverity?: IncidentDto['severity']
     expectedCurrentAlertMergeCount?: number
+    expectedCurrentIsMajor?: boolean
     fromStatus?: IncidentDto['status'] | null
     toStatus?: IncidentDto['status'] | null
     fromSeverity?: IncidentDto['severity'] | null
@@ -201,6 +222,7 @@ function persistLifecycleMutation(
       expectedCurrentAssignedTo: options.expectedCurrentAssignedTo,
       expectedCurrentSeverity: options.expectedCurrentSeverity,
       expectedCurrentAlertMergeCount: options.expectedCurrentAlertMergeCount,
+      expectedCurrentIsMajor: options.expectedCurrentIsMajor,
       notifications: options.notifications,
       events: options.events.map((event) => {
         const isPrimaryTransition = event.id === options.primaryTransitionEventId
@@ -515,8 +537,9 @@ export function acknowledgeIncidentById(
   id: string,
   input?: IncidentLifecycleActionInput,
 ) {
-  const incident = getIncidentById(id)
   const parsedInput = incidentLifecycleActionInputSchema.parse(input ?? {})
+  assertActorPermission(parsedInput.actor, 'incidents:write')
+  const incident = getIncidentById(id)
   const normalizedInput = {
     ...parsedInput,
     actor: normalizeLifecycleActor(parsedInput.actor),
@@ -536,8 +559,9 @@ export function acknowledgeIncidentById(
 }
 
 export function assignIncidentById(id: string, input: IncidentAssignInput) {
-  const incident = getIncidentById(id)
   const parsedInput = incidentAssignInputSchema.parse(input)
+  assertActorPermission(parsedInput.actor, 'incidents:write')
+  const incident = getIncidentById(id)
   const normalizedInput = {
     ...parsedInput,
     actor: normalizeLifecycleActor(parsedInput.actor),
@@ -565,8 +589,9 @@ export function changeIncidentSeverityById(
   id: string,
   input: IncidentSeverityChangeInput,
 ) {
-  const incident = getIncidentById(id)
   const parsedInput = incidentSeverityChangeInputSchema.parse(input)
+  assertActorPermission(parsedInput.actor, 'incidents:write')
+  const incident = getIncidentById(id)
   const normalizedInput = {
     ...parsedInput,
     actor: normalizeLifecycleActor(parsedInput.actor),
@@ -589,8 +614,9 @@ export function resolveIncidentById(
   id: string,
   input?: IncidentLifecycleActionInput,
 ) {
-  const incident = getIncidentById(id)
   const parsedInput = incidentLifecycleActionInputSchema.parse(input ?? {})
+  assertActorPermission(parsedInput.actor, 'incidents:write')
+  const incident = getIncidentById(id)
   const normalizedInput = {
     ...parsedInput,
     actor: normalizeLifecycleActor(parsedInput.actor),
@@ -620,8 +646,9 @@ export function reopenIncidentById(
   id: string,
   input?: IncidentLifecycleActionInput,
 ) {
-  const incident = getIncidentById(id)
   const parsedInput = incidentLifecycleActionInputSchema.parse(input ?? {})
+  assertActorPermission(parsedInput.actor, 'incidents:write')
+  const incident = getIncidentById(id)
   const normalizedInput = {
     ...parsedInput,
     actor: normalizeLifecycleActor(parsedInput.actor),
@@ -643,12 +670,98 @@ export function reopenIncidentById(
   return updatedIncident
 }
 
+export function setMajorIncidentById(id: string, input: IncidentMajorInput) {
+  const parsedInput = incidentMajorInputSchema.parse(input)
+  assertActorPermission(parsedInput.actor, 'incidents:write')
+  const incident = getIncidentById(id)
+  const actor = normalizeLifecycleActor(parsedInput.actor)
+
+  if (incident.isMajorIncident === parsedInput.isMajor) {
+    throw new IncidentLifecycleError(
+      parsedInput.isMajor
+        ? 'Incident is already marked as a major incident.'
+        : 'Incident is not marked as a major incident.',
+    )
+  }
+
+  const now = new Date()
+  const event = buildTimelineEvent(
+    incident.id,
+    'updated',
+    parsedInput.isMajor
+      ? 'Marked as major incident'
+      : 'Cleared major incident flag',
+    actor,
+    now,
+  )
+
+  const nextIncident: IncidentDto = {
+    ...incident,
+    isMajorIncident: parsedInput.isMajor,
+    updatedAt: 'Just now',
+    timeline: [...incident.timeline, event],
+  }
+
+  const notification = buildLifecycleNotification({
+    incident: nextIncident,
+    eventId: event.id,
+    type: 'incident_major_updated',
+    title: parsedInput.isMajor ? 'Major incident flagged' : 'Major incident cleared',
+    message: parsedInput.isMajor
+      ? `${incident.id} was marked as a major incident by ${actor}.`
+      : `${incident.id} major-incident flag was cleared by ${actor}.`,
+    createdAt: event.createdAt,
+  })
+
+  const updated = persistLifecycleMutation(nextIncident, {
+    events: [event],
+    notifications: [notification],
+    expectedCurrentStatus: incident.status,
+    expectedCurrentSeverity: incident.severity,
+    expectedCurrentIsMajor: incident.isMajorIncident,
+  })
+
+  void deliverSlackNotificationsBestEffort([notification])
+  return updated
+}
+
+export function updateIncidentReviewById(
+  id: string,
+  input: IncidentReviewUpdateInput,
+) {
+  const parsedInput = incidentReviewUpdateInputSchema.parse(input)
+  assertActorPermission(parsedInput.actor, 'incidents:write')
+  const incident = getIncidentById(id)
+
+  if (incident.status !== 'resolved') {
+    throw new IncidentLifecycleError(
+      'Only resolved incidents can have a post-incident review.',
+    )
+  }
+
+  const review = incidentReviewSchema.parse(parsedInput.review)
+
+  return persistLifecycleMutation(
+    {
+      ...incident,
+      review,
+      updatedAt: 'Just now',
+    },
+    {
+      events: [],
+      expectedCurrentStatus: 'resolved',
+      expectedCurrentSeverity: incident.severity,
+    },
+  )
+}
+
 export function addIncidentNoteById(
   id: string,
   input: IncidentNoteCreateInput,
 ) {
-  const incident = getIncidentById(id)
   const parsedInput = incidentNoteCreateInputSchema.parse(input)
+  assertActorPermission(parsedInput.author, 'incidents:write')
+  const incident = getIncidentById(id)
   const normalizedAuthor = normalizeLifecycleActor(parsedInput.author)
   const commentMutation = createCommentMutation(
     incident,
@@ -737,8 +850,21 @@ export function ingestAlert(input: unknown): {
     const categoryMatches = existingIncident?.category === parsed.category
 
     if (existingIncident && sourceMatches && categoryMatches) {
+      const mergedIncident = mergeIngestIntoOpenIncident(existingId, parsed)
+      recordAlertIngestHistorySafe({
+        id: `alrt_${randomUUID()}`,
+        source: parsed.source,
+        category: parsed.category,
+        title: parsed.title,
+        severity: parsed.severity,
+        description,
+        dedupKey: effectiveDedupKey,
+        disposition: 'incident_merged',
+        incidentId: mergedIncident.id,
+        ingestedAt: new Date().toISOString(),
+      })
       return {
-        incident: mergeIngestIntoOpenIncident(existingId, parsed),
+        incident: mergedIncident,
         deduplicated: true,
       }
     }
@@ -765,11 +891,13 @@ export function ingestAlert(input: unknown): {
     assignedRunbook: null,
     assignedTo: null,
     alertMergeCount: 0,
+    isMajorIncident: false,
     createdAt: now.toISOString(),
     updatedAt: 'Just now',
     resolvedAt: null,
     timeline: [event],
     notes: [],
+    review: { ...emptyIncidentReview },
   }
 
   const storedEvent: StoredIncidentEventRecord = {
@@ -817,6 +945,18 @@ export function ingestAlert(input: unknown): {
   )
 
   void deliverSlackNotificationsBestEffort(notifications)
+  recordAlertIngestHistorySafe({
+    id: `alrt_${randomUUID()}`,
+    source: parsed.source,
+    category: parsed.category,
+    title: parsed.title,
+    severity: parsed.severity,
+    description,
+    dedupKey: effectiveDedupKey,
+    disposition: 'incident_created',
+    incidentId: createdIncident.id,
+    ingestedAt: new Date().toISOString(),
+  })
 
   return {
     incident: createdIncident,

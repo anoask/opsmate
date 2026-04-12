@@ -35,6 +35,10 @@ export const incidentStatusBadgeStyles: Record<Status, string> = {
   resolved: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
 }
 
+/** Major incident callout (badge / row accent). */
+export const majorIncidentBadgeClassName =
+  'border-rose-500/40 bg-rose-500/15 text-rose-200'
+
 export const runbookSeverityBadgeStyles: Record<Severity, string> = {
   critical: 'bg-red-900 text-red-200',
   high: 'bg-orange-900 text-orange-200',
@@ -47,6 +51,22 @@ export const severityChartColors: Record<Severity, string> = {
   high: '#f97316',
   medium: '#eab308',
   low: '#22c55e',
+}
+
+export const incidentTimelineEventTypeLabels: Record<
+  IncidentTimelineEvent['type'],
+  string
+> = {
+  created: 'Created',
+  acknowledged: 'Acknowledged',
+  updated: 'Updated',
+  alert_merged: 'Alert merged',
+  assigned: 'Assigned',
+  escalated: 'Escalated',
+  severity_changed: 'Severity changed',
+  resolved: 'Resolved',
+  reopened: 'Reopened',
+  comment: 'Comment',
 }
 
 export const incidentTimelineIconStyles: Record<
@@ -90,6 +110,11 @@ export const runbookExecutionStatusMeta: Record<
   RunbookExecutionStatus,
   { icon: LucideIcon; iconClassName: string; badgeClassName: string }
 > = {
+  in_progress: {
+    icon: Clock,
+    iconClassName: 'text-blue-400',
+    badgeClassName: 'bg-blue-900 text-blue-200',
+  },
   success: {
     icon: CheckCircle2,
     iconClassName: 'text-green-400',

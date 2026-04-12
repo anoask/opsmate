@@ -6,7 +6,14 @@ import type {
   RunbookSuggestion,
   SystemHealthItem,
   User,
+  UserNotificationPrefs,
 } from './types'
+
+const DEFAULT_USER_NOTIFICATION_PREFS: UserNotificationPrefs = {
+  notifyOnCritical: true,
+  notifyOnAssignment: true,
+  notifyOnLifecycle: true,
+}
 
 export type {
   Incident,
@@ -38,6 +45,7 @@ export const incidents: Incident[] = [
     assignedRunbook: "CPU Spike Remediation",
     assignedTo: "Sarah Chen",
     alertMergeCount: 0,
+    isMajorIncident: true,
     createdAt: "2024-01-15T14:32:00Z",
     updatedAt: "2 min ago",
     resolvedAt: null,
@@ -51,6 +59,13 @@ export const incidents: Incident[] = [
       { id: "n1", user: "Sarah Chen", timestamp: "14:38", content: "Initial investigation shows spike coincides with v2.4.1 deployment. Checking for memory leaks." },
       { id: "n2", user: "Mike Torres", timestamp: "14:40", content: "I noticed similar behavior in staging last week. Could be related to the new caching layer." },
     ],
+    review: {
+      summary: "",
+      rootCause: "",
+      followUps: "",
+      status: "not_started",
+      actionItems: [],
+    },
   },
   {
     id: "INC-2846",
@@ -63,6 +78,7 @@ export const incidents: Incident[] = [
     assignedRunbook: "DB Connection Recovery",
     assignedTo: null,
     alertMergeCount: 0,
+    isMajorIncident: false,
     createdAt: "2024-01-15T14:26:00Z",
     updatedAt: "8 min ago",
     resolvedAt: null,
@@ -73,6 +89,13 @@ export const incidents: Incident[] = [
     notes: [
       { id: "n1", user: "System", timestamp: "14:28", content: "Automated analysis: 23 connections appear stale (idle > 30 minutes)" },
     ],
+    review: {
+      summary: "",
+      rootCause: "",
+      followUps: "",
+      status: "not_started",
+      actionItems: [],
+    },
   },
   {
     id: "INC-2845",
@@ -85,6 +108,7 @@ export const incidents: Incident[] = [
     assignedRunbook: null,
     assignedTo: "Alex Kim",
     alertMergeCount: 0,
+    isMajorIncident: false,
     createdAt: "2024-01-15T14:19:00Z",
     updatedAt: "15 min ago",
     resolvedAt: null,
@@ -94,6 +118,13 @@ export const incidents: Incident[] = [
       { id: "t3", timestamp: "14:25", type: "updated", description: "Status changed to Investigating", user: "Alex Kim" },
     ],
     notes: [],
+    review: {
+      summary: "",
+      rootCause: "",
+      followUps: "",
+      status: "not_started",
+      actionItems: [],
+    },
   },
   {
     id: "INC-2844",
@@ -106,6 +137,7 @@ export const incidents: Incident[] = [
     assignedRunbook: "Payment Error Triage",
     assignedTo: null,
     alertMergeCount: 0,
+    isMajorIncident: false,
     createdAt: "2024-01-15T14:02:00Z",
     updatedAt: "32 min ago",
     resolvedAt: null,
@@ -113,6 +145,13 @@ export const incidents: Incident[] = [
       { id: "t1", timestamp: "14:02", type: "created", description: "Incident created from Sentry error spike" },
     ],
     notes: [],
+    review: {
+      summary: "",
+      rootCause: "",
+      followUps: "",
+      status: "not_started",
+      actionItems: [],
+    },
   },
   {
     id: "INC-2843",
@@ -125,6 +164,7 @@ export const incidents: Incident[] = [
     assignedRunbook: "Memory Leak Investigation",
     assignedTo: "Jordan Lee",
     alertMergeCount: 0,
+    isMajorIncident: false,
     createdAt: "2024-01-15T13:34:00Z",
     updatedAt: "1 hr ago",
     resolvedAt: null,
@@ -136,6 +176,13 @@ export const incidents: Incident[] = [
     notes: [
       { id: "n1", user: "Jordan Lee", timestamp: "13:55", content: "Taking heap dumps for analysis. Will compare with baseline from last week." },
     ],
+    review: {
+      summary: "",
+      rootCause: "",
+      followUps: "",
+      status: "not_started",
+      actionItems: [],
+    },
   },
   {
     id: "INC-2842",
@@ -148,6 +195,7 @@ export const incidents: Incident[] = [
     assignedRunbook: null,
     assignedTo: null,
     alertMergeCount: 0,
+    isMajorIncident: false,
     createdAt: "2024-01-15T12:34:00Z",
     updatedAt: "2 hr ago",
     resolvedAt: null,
@@ -155,6 +203,13 @@ export const incidents: Incident[] = [
       { id: "t1", timestamp: "12:34", type: "created", description: "Incident created from Datadog latency alert" },
     ],
     notes: [],
+    review: {
+      summary: "",
+      rootCause: "",
+      followUps: "",
+      status: "not_started",
+      actionItems: [],
+    },
   },
   {
     id: "INC-2841",
@@ -167,6 +222,7 @@ export const incidents: Incident[] = [
     assignedRunbook: "S3 Permission Fix",
     assignedTo: "Taylor Smith",
     alertMergeCount: 0,
+    isMajorIncident: false,
     createdAt: "2024-01-15T11:00:00Z",
     updatedAt: "3 hr ago",
     resolvedAt: "2024-01-15T11:45:00Z",
@@ -179,6 +235,28 @@ export const incidents: Incident[] = [
     notes: [
       { id: "n1", user: "Taylor Smith", timestamp: "11:30", content: "IAM policy was updated by automated Terraform apply. Adding guardrails to prevent this." },
     ],
+    review: {
+      summary: "S3 access denied for Lambda after IAM policy change; restored GetObject.",
+      rootCause: "Terraform apply removed s3:GetObject from the Lambda execution role.",
+      followUps: "Add policy drift checks; document required S3 permissions for lambdas.",
+      status: "completed",
+      actionItems: [
+        {
+          id: "ai-2841-1",
+          title: "Add Terraform policy drift check for Lambda S3 roles",
+          owner: "Taylor Smith",
+          status: "open",
+          dueAt: null,
+        },
+        {
+          id: "ai-2841-2",
+          title: "Document required S3 permissions in runbook",
+          owner: "Taylor Smith",
+          status: "done",
+          dueAt: "2026-01-16",
+        },
+      ],
+    },
   },
   {
     id: "INC-2840",
@@ -191,6 +269,7 @@ export const incidents: Incident[] = [
     assignedRunbook: "Redis Failover Procedure",
     assignedTo: "Mike Torres",
     alertMergeCount: 0,
+    isMajorIncident: false,
     createdAt: "2024-01-15T09:15:00Z",
     updatedAt: "5 hr ago",
     resolvedAt: "2024-01-15T09:25:00Z",
@@ -203,6 +282,28 @@ export const incidents: Incident[] = [
     notes: [
       { id: "n1", user: "Mike Torres", timestamp: "09:30", content: "Post-mortem: Primary node OOM killed due to memory pressure. Increasing instance size." },
     ],
+    review: {
+      summary: "Redis primary failed over after OOM; replica promoted successfully.",
+      rootCause: "Memory pressure on primary led to OOM kill.",
+      followUps: "Resize instance; add memory pressure alerts.",
+      status: "draft",
+      actionItems: [
+        {
+          id: "ai-2840-1",
+          title: "Resize Redis primary instance class",
+          owner: "Mike Torres",
+          status: "open",
+          dueAt: "2026-01-18",
+        },
+        {
+          id: "ai-2840-2",
+          title: "Add memory pressure alert on Redis nodes",
+          owner: "",
+          status: "open",
+          dueAt: null,
+        },
+      ],
+    },
   },
 ]
 
@@ -543,6 +644,7 @@ export const teamMembers: User[] = [
     role: "admin",
     status: "active",
     joinedAt: "2023-06-15",
+    notificationPrefs: DEFAULT_USER_NOTIFICATION_PREFS,
   },
   {
     id: "tm-2",
@@ -551,6 +653,7 @@ export const teamMembers: User[] = [
     role: "manager",
     status: "active",
     joinedAt: "2023-08-22",
+    notificationPrefs: DEFAULT_USER_NOTIFICATION_PREFS,
   },
   {
     id: "tm-3",
@@ -559,6 +662,7 @@ export const teamMembers: User[] = [
     role: "responder",
     status: "active",
     joinedAt: "2023-10-10",
+    notificationPrefs: DEFAULT_USER_NOTIFICATION_PREFS,
   },
   {
     id: "tm-4",
@@ -567,6 +671,7 @@ export const teamMembers: User[] = [
     role: "responder",
     status: "active",
     joinedAt: "2023-11-05",
+    notificationPrefs: DEFAULT_USER_NOTIFICATION_PREFS,
   },
   {
     id: "tm-5",
@@ -575,6 +680,7 @@ export const teamMembers: User[] = [
     role: "responder",
     status: "active",
     joinedAt: "2024-01-02",
+    notificationPrefs: DEFAULT_USER_NOTIFICATION_PREFS,
   },
   {
     id: "tm-6",
@@ -583,6 +689,7 @@ export const teamMembers: User[] = [
     role: "viewer",
     status: "inactive",
     joinedAt: "2023-09-18",
+    notificationPrefs: DEFAULT_USER_NOTIFICATION_PREFS,
   },
 ]
 

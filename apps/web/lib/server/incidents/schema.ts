@@ -8,6 +8,9 @@ import type {
   Incident,
   IncidentCategory,
   IncidentNote,
+  IncidentReview,
+  IncidentReviewActionItemStatus,
+  IncidentReviewStatus,
   IncidentTimelineEvent,
   Status,
 } from '@/lib/types'
@@ -56,6 +59,45 @@ export const incidentNoteSchema: z.ZodType<IncidentNote> = z.object({
   content: z.string().min(1),
 })
 
+export const incidentReviewStatusSchema: z.ZodType<IncidentReviewStatus> = z.enum([
+  'not_started',
+  'draft',
+  'completed',
+])
+
+export const incidentReviewActionItemStatusSchema: z.ZodType<IncidentReviewActionItemStatus> =
+  z.enum(['open', 'done', 'dropped'])
+
+export const incidentReviewActionItemSchema = z.object({
+  id: z.string().min(1),
+  title: z.string(),
+  owner: z.string(),
+  status: incidentReviewActionItemStatusSchema,
+  dueAt: z.preprocess((v) => {
+    if (v === undefined || v === null) return null
+    if (typeof v !== 'string') return null
+    const t = v.trim()
+    return t === '' ? null : t
+  }, z.union([z.string(), z.null()])),
+})
+
+export const incidentReviewSchema = z.object({
+  summary: z.string(),
+  rootCause: z.string(),
+  followUps: z.string(),
+  status: incidentReviewStatusSchema,
+  actionItems: z.array(incidentReviewActionItemSchema).default([]),
+})
+
+/** Default review when none is stored (e.g. legacy rows, new incidents). */
+export const emptyIncidentReview: IncidentReview = {
+  summary: '',
+  rootCause: '',
+  followUps: '',
+  status: 'not_started',
+  actionItems: [],
+}
+
 export const incidentDtoSchema = z.object({
   id: z.string().min(1),
   source: z.string().min(1),
@@ -67,11 +109,13 @@ export const incidentDtoSchema = z.object({
   assignedRunbook: z.string().min(1).nullable(),
   assignedTo: z.string().min(1).nullable(),
   alertMergeCount: z.number().int().min(0).default(0),
+  isMajorIncident: z.boolean().default(false),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().min(1),
   resolvedAt: z.string().datetime({ offset: true }).nullable(),
   timeline: z.array(incidentTimelineEventSchema),
   notes: z.array(incidentNoteSchema),
+  review: incidentReviewSchema,
 }).superRefine((incident, context) => {
   if (incident.status === 'resolved' && !incident.resolvedAt) {
     context.addIssue({
@@ -130,6 +174,16 @@ export const alertIngestInputSchema = z.object({
   dedupKey: z.string().trim().min(1).max(256).optional(),
 })
 
+export const incidentMajorInputSchema = z.object({
+  actor: z.string().trim().min(1).default('OpsMate Bot'),
+  isMajor: z.boolean(),
+})
+
+export const incidentReviewUpdateInputSchema = z.object({
+  actor: z.string().trim().min(1).default('OpsMate Bot'),
+  review: incidentReviewSchema,
+})
+
 export type IncidentDto = Incident
 export type IncidentListQuery = {
   range?: AnalyticsDateRange
@@ -146,3 +200,5 @@ export type IncidentNoteCreateInput = z.infer<
   typeof incidentNoteCreateInputSchema
 >
 export type AlertIngestInput = z.infer<typeof alertIngestInputSchema>
+export type IncidentMajorInput = z.infer<typeof incidentMajorInputSchema>
+export type IncidentReviewUpdateInput = z.infer<typeof incidentReviewUpdateInputSchema>

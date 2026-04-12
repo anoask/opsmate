@@ -4,6 +4,7 @@ import { AppShell } from '@/components/app-shell'
 import { NotificationsSettings } from '@/components/settings/notifications-settings'
 import { TeamMembersSettings } from '@/components/settings/team-members-settings'
 import { IntegrationsSettings } from '@/components/settings/integrations-settings'
+import { WorkspaceSettingsOverview } from '@/components/settings/workspace-settings-overview'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -15,14 +16,18 @@ export default function SettingsPage() {
     <AppShell>
       {/* Header */}
       <div className="sticky top-0 bg-background z-10 pt-6 px-6 border-b border-border pb-4">
-        <h1 className="text-3xl font-bold text-foreground">Settings</h1>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground/90">
-          Configure notifications, team, and integrations
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Settings</h1>
+        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+          Team roster, per-user Slack routing, and delivery history are live on other pages. Some
+          controls below are illustrative until wired to the backend—see each section. Signed-in{' '}
+          <span className="font-medium text-foreground">admins</span> see an extra workspace
+          governance panel under <span className="font-medium text-foreground">Workspace overview</span>.
         </p>
       </div>
 
       {/* Content */}
-      <div className="flex-1 px-6 pb-6">
+      <div className="flex-1 space-y-6 px-6 pb-6">
+        <WorkspaceSettingsOverview />
         <Tabs defaultValue="notifications" className="w-full">
           <TabsList className="grid w-full grid-cols-4 mb-8">
             <TabsTrigger value="notifications" className="gap-2">
@@ -59,7 +64,10 @@ export default function SettingsPage() {
             <Card className="bg-card border-border shadow-black/20">
               <CardHeader>
                 <CardTitle>Display Preferences</CardTitle>
-                <CardDescription>Customize how OpsMate looks and behaves</CardDescription>
+                <CardDescription>
+                  Placeholder controls only—these choices are not saved yet. Theme and layout follow
+                  the app shell.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-3">
@@ -113,12 +121,16 @@ export default function SettingsPage() {
             <Card className="bg-card border-border shadow-black/20">
               <CardHeader>
                 <CardTitle>Danger Zone</CardTitle>
-                <CardDescription>Irreversible actions</CardDescription>
+                <CardDescription>
+                  Mock UI—no workspace data is deleted or reset from here.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="p-4 border border-destructive/50 rounded-lg bg-destructive/10">
                   <h4 className="font-medium text-destructive mb-2">Reset All Settings</h4>
-                  <p className="text-sm text-muted-foreground mb-3">This will reset all your preferences to default values.</p>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Non-functional preview—no preferences are stored or cleared from here.
+                  </p>
                   <Button variant="outline" className="border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive">
                     Reset Settings
                   </Button>

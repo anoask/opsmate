@@ -111,3 +111,77 @@ export function getStoredRunbook(id: string) {
 
   return row ? cloneRunbookRecord(parseRunbookRow(row)) : null
 }
+
+export function getStoredRunbookByTitle(title: string) {
+  const db = getDb()
+  const row = db
+    .prepare(
+      `SELECT
+        id,
+        title,
+        category,
+        severity,
+        summary,
+        owner,
+        last_updated,
+        success_rate,
+        execution_count,
+        estimated_duration,
+        related_incident_types_json,
+        tags_json,
+        steps_json,
+        executions_json,
+        created_at,
+        last_executed
+      FROM runbooks
+      WHERE lower(title) = lower(?)
+      LIMIT 1`,
+    )
+    .get(title) as Parameters<typeof parseRunbookRow>[0] | undefined
+
+  return row ? cloneRunbookRecord(parseRunbookRow(row)) : null
+}
+
+export function saveStoredRunbook(runbook: RunbookRecord) {
+  const db = getDb()
+  const parsed = runbookRecordSchema.parse(runbook)
+
+  db.prepare(
+    `UPDATE runbooks SET
+      title = @title,
+      category = @category,
+      severity = @severity,
+      summary = @summary,
+      owner = @owner,
+      last_updated = @last_updated,
+      success_rate = @success_rate,
+      execution_count = @execution_count,
+      estimated_duration = @estimated_duration,
+      related_incident_types_json = @related_incident_types_json,
+      tags_json = @tags_json,
+      steps_json = @steps_json,
+      executions_json = @executions_json,
+      created_at = @created_at,
+      last_executed = @last_executed
+    WHERE id = @id`,
+  ).run({
+    id: parsed.id,
+    title: parsed.title,
+    category: parsed.category,
+    severity: parsed.severity,
+    summary: parsed.summary,
+    owner: parsed.owner,
+    last_updated: parsed.lastUpdated,
+    success_rate: parsed.successRate,
+    execution_count: parsed.executionCount,
+    estimated_duration: parsed.estimatedDuration,
+    related_incident_types_json: JSON.stringify(parsed.relatedIncidentTypes),
+    tags_json: JSON.stringify(parsed.tags),
+    steps_json: JSON.stringify(parsed.steps),
+    executions_json: JSON.stringify(parsed.executions),
+    created_at: parsed.createdAt,
+    last_executed: parsed.lastExecuted,
+  })
+
+  return cloneRunbookRecord(parsed)
+}

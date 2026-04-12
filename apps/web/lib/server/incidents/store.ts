@@ -1,6 +1,8 @@
 import { getAnalyticsWindowStart, type AnalyticsDateRange } from '@/lib/analytics/date-range'
 import {
+  emptyIncidentReview,
   incidentDtoSchema,
+  incidentReviewSchema,
   type IncidentDto,
 } from '@/lib/server/incidents/schema'
 import type { StoredIncidentNotificationRecord } from '@/lib/server/notifications/store'
@@ -11,6 +13,10 @@ function cloneIncident(incident: IncidentDto): IncidentDto {
     ...incident,
     timeline: incident.timeline.map((event) => ({ ...event })),
     notes: incident.notes.map((note) => ({ ...note })),
+    review: {
+      ...incident.review,
+      actionItems: incident.review.actionItems.map((item) => ({ ...item })),
+    },
   }
 }
 
@@ -30,6 +36,8 @@ type IncidentRow = {
   resolved_at: string | null
   timeline_json: string
   notes_json: string
+  review_json: string | null
+  is_major: number | null
 }
 
 type IncidentEventRow = {
@@ -80,6 +88,19 @@ export class IncidentStateConflictError extends Error {
   }
 }
 
+function parseReviewJson(reviewJson: string | null): IncidentDto['review'] {
+  if (!reviewJson?.trim()) {
+    return { ...emptyIncidentReview }
+  }
+  try {
+    const parsed = JSON.parse(reviewJson) as unknown
+    const result = incidentReviewSchema.safeParse(parsed)
+    return result.success ? result.data : { ...emptyIncidentReview }
+  } catch {
+    return { ...emptyIncidentReview }
+  }
+}
+
 function parseIncidentRow(
   row: IncidentRow,
   events?: IncidentDto['timeline'],
@@ -96,12 +117,14 @@ function parseIncidentRow(
     assignedRunbook: row.assigned_runbook,
     assignedTo: row.assigned_to,
     alertMergeCount: row.alert_merge_count ?? 0,
+    isMajorIncident: (row.is_major ?? 0) === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     resolvedAt: row.resolved_at,
     timeline:
       events ?? (JSON.parse(row.timeline_json) as IncidentDto['timeline']),
     notes: notes ?? (JSON.parse(row.notes_json) as IncidentDto['notes']),
+    review: parseReviewJson(row.review_json),
   })
 }
 
@@ -226,7 +249,9 @@ export function listStoredIncidents(options?: { range?: AnalyticsDateRange }) {
       updated_at,
       resolved_at,
       timeline_json,
-      notes_json
+      notes_json,
+      review_json,
+      is_major
     FROM incidents`
 
   const rows = options?.range
@@ -267,7 +292,9 @@ export function getStoredIncident(id: string) {
         updated_at,
         resolved_at,
         timeline_json,
-        notes_json
+        notes_json,
+        review_json,
+        is_major
       FROM incidents
       WHERE id = ?`,
     )
@@ -313,7 +340,9 @@ export function saveStoredIncident(incident: IncidentDto) {
       timeline_json,
       notes_json,
       alert_dedup_key,
-      alert_merge_count
+      alert_merge_count,
+      review_json,
+      is_major
     ) VALUES (
       @id,
       @source,
@@ -330,7 +359,9 @@ export function saveStoredIncident(incident: IncidentDto) {
       @timeline_json,
       @notes_json,
       @alert_dedup_key,
-      @alert_merge_count
+      @alert_merge_count,
+      @review_json,
+      @is_major
     )
     ON CONFLICT(id) DO UPDATE SET
       source = excluded.source,
@@ -345,7 +376,9 @@ export function saveStoredIncident(incident: IncidentDto) {
       updated_at = excluded.updated_at,
       resolved_at = excluded.resolved_at,
       timeline_json = excluded.timeline_json,
-      notes_json = excluded.notes_json`,
+      notes_json = excluded.notes_json,
+      review_json = excluded.review_json,
+      is_major = excluded.is_major`,
   ).run({
     id: parsedIncident.id,
     source: parsedIncident.source,
@@ -363,6 +396,8 @@ export function saveStoredIncident(incident: IncidentDto) {
     notes_json: JSON.stringify(parsedIncident.notes),
     alert_dedup_key: null,
     alert_merge_count: parsedIncident.alertMergeCount,
+    review_json: JSON.stringify(parsedIncident.review),
+    is_major: parsedIncident.isMajorIncident ? 1 : 0,
   })
 
   return cloneIncident(parsedIncident)
@@ -478,7 +513,9 @@ export function createStoredIncidentWithLifecycle(options: {
           timeline_json,
           notes_json,
           alert_dedup_key,
-          alert_merge_count
+          alert_merge_count,
+          review_json,
+          is_major
         ) VALUES (
           @id,
           @source,
@@ -495,7 +532,9 @@ export function createStoredIncidentWithLifecycle(options: {
           @timeline_json,
           @notes_json,
           @alert_dedup_key,
-          @alert_merge_count
+          @alert_merge_count,
+          @review_json,
+          @is_major
         )`,
       )
       .run({
@@ -515,6 +554,8 @@ export function createStoredIncidentWithLifecycle(options: {
         notes_json: JSON.stringify(parsedIncident.notes),
         alert_dedup_key: options.alertDedupKey ?? null,
         alert_merge_count: parsedIncident.alertMergeCount,
+        review_json: JSON.stringify(parsedIncident.review),
+        is_major: parsedIncident.isMajorIncident ? 1 : 0,
       })
 
     if (insertResult.changes !== 1) {
@@ -649,6 +690,7 @@ export function commitStoredIncidentLifecycleMutation(options: {
   expectedCurrentAssignedTo?: string | null
   expectedCurrentSeverity?: IncidentDto['severity']
   expectedCurrentAlertMergeCount?: number
+  expectedCurrentIsMajor?: boolean
 }) {
   const db = getDb()
   const parsedIncident = incidentDtoSchema.parse(options.incident)
@@ -656,7 +698,7 @@ export function commitStoredIncidentLifecycleMutation(options: {
   const transaction = db.transaction(() => {
     const currentRow = db
       .prepare(
-        'SELECT status, assigned_to, severity, alert_merge_count FROM incidents WHERE id = ?',
+        'SELECT status, assigned_to, severity, alert_merge_count, is_major FROM incidents WHERE id = ?',
       )
       .get(parsedIncident.id) as
       | {
@@ -664,6 +706,7 @@ export function commitStoredIncidentLifecycleMutation(options: {
           assigned_to: string | null
           severity: IncidentDto['severity']
           alert_merge_count: number
+          is_major: number
         }
       | undefined
 
@@ -709,6 +752,15 @@ export function commitStoredIncidentLifecycleMutation(options: {
       )
     }
 
+    if (options.expectedCurrentIsMajor !== undefined) {
+      const currentMajor = (currentRow.is_major ?? 0) === 1
+      if (currentMajor !== options.expectedCurrentIsMajor) {
+        throw new IncidentStateConflictError(
+          `Incident ${parsedIncident.id} changed major-incident flag before the lifecycle action could be applied.`,
+        )
+      }
+    }
+
     const updateResult = db
       .prepare(
         `UPDATE incidents SET
@@ -725,7 +777,9 @@ export function commitStoredIncidentLifecycleMutation(options: {
           resolved_at = @resolved_at,
           timeline_json = @timeline_json,
           notes_json = @notes_json,
-          alert_merge_count = @alert_merge_count
+          alert_merge_count = @alert_merge_count,
+          review_json = @review_json,
+          is_major = @is_major
         WHERE id = @id`,
       )
       .run({
@@ -744,6 +798,8 @@ export function commitStoredIncidentLifecycleMutation(options: {
         timeline_json: JSON.stringify(parsedIncident.timeline),
         notes_json: JSON.stringify(parsedIncident.notes),
         alert_merge_count: parsedIncident.alertMergeCount,
+        review_json: JSON.stringify(parsedIncident.review),
+        is_major: parsedIncident.isMajorIncident ? 1 : 0,
       })
 
     if (updateResult.changes !== 1) {
