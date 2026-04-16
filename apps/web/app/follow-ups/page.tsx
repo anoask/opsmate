@@ -89,8 +89,7 @@ export default function FollowUpsPage() {
               Follow-ups
             </h1>
             <p className="max-w-2xl text-sm leading-6 text-muted-foreground/90">
-              Open action items from resolved incident reviews. Edit items in each
-              incident&apos;s post-incident review.
+              Open review action items — edit status in each incident&apos;s post-incident review.
             </p>
           </div>
           <Button

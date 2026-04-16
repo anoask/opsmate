@@ -66,6 +66,7 @@ function NotificationsPageInner() {
   const [error, setError] = useState<string | null>(null)
   const [activeRetryId, setActiveRetryId] = useState<string | null>(null)
   const [isRetryingBatch, setIsRetryingBatch] = useState(false)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
   const [readFilter, setReadFilter] = useState<"all" | "unread" | "read">("all")
   const [slackFilter, setSlackFilter] = useState<"all" | SlackDeliveryStatus | "attention">(
     "all",
@@ -78,10 +79,12 @@ function NotificationsPageInner() {
       const feed = await getNotificationCenterFeed(40)
       setItems(feed.items)
       setUnreadCount(feed.unreadCount)
+      setLastRefreshedAt(new Date().toISOString())
     } catch {
       setItems([])
       setUnreadCount(0)
-      setError("Unable to load notification center right now.")
+      setError("Unable to load notifications right now.")
+      setLastRefreshedAt(new Date().toISOString())
     } finally {
       setIsLoading(false)
     }
@@ -152,11 +155,17 @@ function NotificationsPageInner() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1.5">
             <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-              Notification Center
+              Notifications
             </h1>
             <p className="text-sm text-muted-foreground">
-              Incident notifications with Slack delivery visibility.
+              In-app feed and Slack delivery audit; retry failed deliveries.
             </p>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <Badge variant="outline" className="border-border/70 bg-secondary/40 text-[10px]">
+                Live API
+              </Badge>
+              <span>Last refreshed: {lastRefreshedAt ? new Date(lastRefreshedAt).toLocaleTimeString() : "—"}</span>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="border-border/70 bg-secondary/40">
@@ -172,7 +181,7 @@ function NotificationsPageInner() {
                   : `${failedSlackInFeed} failed (Slack) in the loaded feed — batch retry uses recent failures from the server.`
               }
             >
-              {isRetryingBatch ? "Retrying..." : "Retry Recent Failed Slack"}
+              {isRetryingBatch ? "Retrying…" : "Retry recent Slack failures"}
             </Button>
             <Button variant="outline" onClick={() => void refresh()} disabled={isLoading}>
               <RefreshCw className="h-4 w-4" />
@@ -184,7 +193,7 @@ function NotificationsPageInner() {
         {error && (
           <Alert className="border-border/70 bg-card/70">
             <AlertTriangle className="h-4 w-4 text-amber-400" />
-            <AlertTitle>Notification center notice</AlertTitle>
+            <AlertTitle>Couldn’t load</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
@@ -192,10 +201,10 @@ function NotificationsPageInner() {
         <Card className="border-border/70 bg-card/70">
           <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="space-y-1">
-              <CardTitle className="text-base">Recent Notifications</CardTitle>
+              <CardTitle className="text-base">Feed</CardTitle>
               <p className="text-xs text-muted-foreground">
-                In-app feed plus Slack audit. Open an incident from the ID link. Read/unread reflects
-                stored state (no mark-read action yet).
+                Includes Slack status per row; open incident from id link. Read/unread is stored
+                state only.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -238,13 +247,13 @@ function NotificationsPageInner() {
             {isLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Spinner className="size-4" />
-                Loading notifications...
+                Loading…
               </div>
             ) : items.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No notifications yet.</p>
+              <p className="text-sm text-muted-foreground">No rows returned.</p>
             ) : sortedItems.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No notifications match the current filters.
+                No rows match filters.
               </p>
             ) : (
               sortedItems.map((item) => {

@@ -10,7 +10,7 @@ export function RunbookSuggestions() {
       <CardHeader className="flex flex-row items-center gap-2">
         <Sparkles className="h-4 w-4 text-primary" />
         <CardTitle className="text-base font-semibold">
-          AI Runbook Suggestions
+          Suggested runbooks
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

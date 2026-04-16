@@ -36,13 +36,13 @@ export function IncidentTrendChart({
     <Card className="bg-card border-border shadow-black/20">
       <CardHeader>
         <CardTitle className="text-base font-semibold">
-          Incidents Over Time
+          Created vs resolved (trend)
         </CardTitle>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
-            Loading incident trend...
+            Loading…
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
@@ -98,17 +98,17 @@ export function CategoryDistributionChart({
     <Card className="bg-card border-border shadow-black/20">
       <CardHeader>
         <CardTitle className="text-base font-semibold">
-          Incident Categories
+          Mix by category
         </CardTitle>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
-            Loading category breakdown...
+            Loading…
           </div>
         ) : data.length === 0 ? (
           <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
-            No incident categories available yet.
+            No category breakdown for this range.
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={220}>

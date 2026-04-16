@@ -8,8 +8,7 @@ export default function TeamPage() {
         <div className="space-y-1.5">
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">Team</h1>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground/90">
-            People on call, roles, and per-user notification intent. Same roster powers incident
-            assignees in the live app.
+            Roster for assignment, roles, and Slack routing prefs (who gets which signals).
           </p>
         </div>
         <TeamRosterCard />

@@ -45,9 +45,9 @@ export function IncidentsTable({
     <Card className="bg-card border-border">
       <CardHeader className="flex flex-row items-center justify-between border-b border-border/60 pb-4">
         <div className="space-y-1">
-          <CardTitle className="text-lg font-semibold">Recent Incidents</CardTitle>
+          <CardTitle className="text-lg font-semibold">Recent incidents</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Latest alerts requiring attention across connected systems
+            Last five by time — full queue in Incidents
             {majorInList > 0 ? (
               <span className="text-foreground/80">
                 {" "}
@@ -64,7 +64,7 @@ export function IncidentsTable({
                 ·{" "}
                 <span className="inline-flex items-center gap-1 text-amber-700/90 dark:text-amber-400/85">
                   <User className="inline h-3.5 w-3.5" aria-hidden />
-                  {unassignedActiveInList} need owner
+                  {unassignedActiveInList} need assignee
                 </span>
               </span>
             ) : null}
@@ -104,7 +104,7 @@ export function IncidentsTable({
                   colSpan={9}
                   className="px-6 py-10 text-center text-sm text-muted-foreground"
                 >
-                  Loading recent incidents...
+                  Loading…
                 </TableCell>
               </TableRow>
             ) : incidents.length === 0 ? (
@@ -113,17 +113,26 @@ export function IncidentsTable({
                   colSpan={9}
                   className="px-6 py-10 text-center text-sm text-muted-foreground"
                 >
-                  No incidents available yet.
+                  No incidents in range.
                 </TableCell>
               </TableRow>
             ) : (
               incidents.map((incident) => (
+                (() => {
+                  const isUnassignedHighRisk =
+                    !incident.isMajorIncident &&
+                    incident.status !== "resolved" &&
+                    !incident.assignedTo?.trim() &&
+                    (incident.severity === "critical" || incident.severity === "high")
+                  return (
                 <TableRow
                   key={incident.id}
                   className={cn(
                     "cursor-pointer border-border/60 hover:bg-secondary/35",
                     incident.isMajorIncident && "border-l-2 border-l-rose-500/55",
+                    isUnassignedHighRisk && "border-l-2 border-l-red-500/55 bg-red-500/[0.03]",
                     !incident.isMajorIncident &&
+                      !isUnassignedHighRisk &&
                       incident.status !== "resolved" &&
                       !incident.assignedTo?.trim() &&
                       "border-l-2 border-l-amber-500/50",
@@ -147,6 +156,14 @@ export function IncidentsTable({
                   </TableCell>
                   <TableCell className="max-w-[250px] truncate font-medium">
                     {incident.title}
+                    {isUnassignedHighRisk ? (
+                      <Badge
+                        variant="outline"
+                        className="ml-2 h-5 border-red-500/35 text-[10px] text-red-600 dark:text-red-400"
+                      >
+                        Unassigned high risk
+                      </Badge>
+                    ) : null}
                   </TableCell>
                   <TableCell>
                     <Badge
@@ -204,6 +221,8 @@ export function IncidentsTable({
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>
+                  )
+                })()
               ))
             )}
           </TableBody>

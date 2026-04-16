@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 
 interface OperatorSignalsStripProps {
   unassignedActive: number
+  unassignedHighSeverity: number
   mineActive: number
   overdueFollowUps: number
   isLoading?: boolean
@@ -15,6 +16,7 @@ interface OperatorSignalsStripProps {
 
 export function OperatorSignalsStrip({
   unassignedActive,
+  unassignedHighSeverity,
   mineActive,
   overdueFollowUps,
   isLoading = false,
@@ -24,7 +26,7 @@ export function OperatorSignalsStrip({
     <div className="mb-6 flex flex-col gap-3 rounded-xl border border-border/70 bg-card/70 p-4 shadow-sm shadow-black/10 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
       <div className="flex items-center gap-2">
         <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/85">
-          Operator focus
+          Needs attention
         </span>
         {isLoading ? (
           <span className="text-sm text-muted-foreground">Loading…</span>
@@ -47,6 +49,14 @@ export function OperatorSignalsStrip({
             </span>
             <span className="text-muted-foreground"> unassigned active</span>
           </span>
+          {unassignedHighSeverity > 0 && !isLoading ? (
+            <Badge
+              variant="outline"
+              className="ml-0.5 border-red-500/35 text-[10px] text-red-600 dark:text-red-400"
+            >
+              {unassignedHighSeverity} high/critical
+            </Badge>
+          ) : null}
         </Link>
         <div
           className={cn(

@@ -76,7 +76,7 @@ export function TopBar() {
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           type="search"
-          placeholder="Search incidents, runbooks..."
+          placeholder="Search incidents…"
           className="h-10 border-border/70 bg-secondary/70 pl-9"
         />
       </div>
@@ -144,7 +144,7 @@ export function TopBar() {
                 <div>
                   <p className="text-sm font-medium text-foreground">Notifications</p>
                   <p className="text-xs text-muted-foreground">
-                    Operational updates from incident lifecycle activity
+                    From incident lifecycle; open an incident for detail
                   </p>
                 </div>
                 {unreadCount > 0 && (

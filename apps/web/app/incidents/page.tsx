@@ -7,6 +7,7 @@ import { useActor, OPSMATE_DEFAULT_ACTOR_NAME } from "@/components/actor-context
 import { AppShell } from "@/components/app-shell"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { IncidentsFilters } from "@/components/incidents/incidents-filters"
@@ -38,6 +39,7 @@ import {
   updateRunbookExecution,
 } from "@/lib/api/runbooks"
 import { fetchUsers } from "@/lib/api/users"
+import { countOverdueOpenReviewActionItems } from "@/lib/follow-ups"
 import { teamMembers } from "@/lib/mock-data"
 import type {
   Incident,
@@ -85,6 +87,7 @@ function IncidentsPageInner() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadWarning, setLoadWarning] = useState<string | null>(null)
   const [dataSource, setDataSource] = useState<IncidentsDataSource>("backend")
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
   const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [runbookExecutionContext, setRunbookExecutionContext] =
@@ -194,11 +197,13 @@ function IncidentsPageInner() {
       setIncidents(result.incidents)
       setDataSource(result.source)
       setLoadWarning(result.warning ?? null)
+      setLastRefreshedAt(new Date().toISOString())
     } catch {
       setIncidents([])
       setDataSource("mock")
       setLoadWarning(null)
       setLoadError("Unable to load incidents right now. Please try again.")
+      setLastRefreshedAt(new Date().toISOString())
     } finally {
       setIsInitialLoading(false)
     }
@@ -673,6 +678,8 @@ function IncidentsPageInner() {
 
   const activeCount = incidents.filter((i) => i.status !== "resolved").length
   const resolvedCount = incidents.filter((i) => i.status === "resolved").length
+  const overdueFollowUpCount = countOverdueOpenReviewActionItems(incidents)
+  const sourceLabel = dataSource === "backend" ? "Live API" : "Limited data"
 
   const renderIncidentsContent = () => {
     if (isInitialLoading) {
@@ -681,7 +688,7 @@ function IncidentsPageInner() {
           <CardContent className="flex items-center justify-center gap-3 py-12">
             <Spinner className="size-4 text-muted-foreground" />
             <span className="text-sm text-muted-foreground">
-              Loading incidents...
+              Loading incidents…
             </span>
           </CardContent>
         </Card>
@@ -738,17 +745,36 @@ function IncidentsPageInner() {
             Incidents
           </h1>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground/90">
-            Manage and track all incidents across your infrastructure
+            Primary queue: filters, board or table, lifecycle and post-incident review per row.
           </p>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline" className="border-border/70 bg-secondary/40 text-[10px]">
+              {sourceLabel}
+            </Badge>
+            <span>Last refreshed: {lastRefreshedAt ? new Date(lastRefreshedAt).toLocaleTimeString() : "—"}</span>
+          </div>
         </div>
 
         {loadWarning && (
           <Alert className="border-border/70 bg-card/70">
             <AlertTriangle className="h-4 w-4 text-amber-400" />
-            <AlertTitle>Demo mode</AlertTitle>
+            <AlertTitle>Limited data</AlertTitle>
             <AlertDescription>{loadWarning}</AlertDescription>
           </Alert>
         )}
+        {overdueFollowUpCount > 0 ? (
+          <Alert className="border-red-500/35 bg-red-500/[0.06]">
+            <AlertTriangle className="h-4 w-4 text-red-500" />
+            <AlertTitle>Overdue follow-ups</AlertTitle>
+            <AlertDescription>
+              {overdueFollowUpCount} action item(s) are overdue across incidents.{" "}
+              <a href="/follow-ups" className="font-medium text-primary underline-offset-2 hover:underline">
+                Open Follow-ups
+              </a>
+              .
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
         {/* Tabs and Filters */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>

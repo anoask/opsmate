@@ -211,6 +211,7 @@ export function IncidentDetailSheet({
   canMutateRunbookExecution = true,
 }: IncidentDetailSheetProps) {
   const [noteInput, setNoteInput] = useState("")
+  const [reviewValidationError, setReviewValidationError] = useState<string | null>(null)
   const [selectedAssignee, setSelectedAssignee] = useState(incident?.assignedTo ?? "")
   const [selectedSeverity, setSelectedSeverity] = useState<Severity>(
     incident?.severity ?? "medium",
@@ -261,6 +262,7 @@ export function IncidentDetailSheet({
         ...incident.review,
         actionItems: incident.review.actionItems.map((item) => ({ ...item })),
       })
+      setReviewValidationError(null)
     }
   }
 
@@ -271,6 +273,14 @@ export function IncidentDetailSheet({
   const reviewStatusLabel =
     REVIEW_STATUS_OPTIONS.find((o) => o.value === reviewDraft.status)?.label ??
     reviewDraft.status
+  const hasReviewSummary = reviewDraft.summary.trim().length > 0
+  const hasReviewRootCause = reviewDraft.rootCause.trim().length > 0
+  const hasReviewFollowUps = reviewDraft.followUps.trim().length > 0
+  const hasReviewActionItems = reviewDraft.actionItems.length > 0
+  const canMarkReviewCompleted =
+    hasReviewSummary &&
+    hasReviewRootCause &&
+    (hasReviewFollowUps || hasReviewActionItems)
 
   async function handleAddNote() {
     const content = noteInput.trim()
@@ -306,6 +316,14 @@ export function IncidentDetailSheet({
       return
     }
 
+    if (reviewDraft.status === "completed" && !canMarkReviewCompleted) {
+      setReviewValidationError(
+        "To mark completed, fill summary and root cause/fix, then add follow-up notes or at least one action item.",
+      )
+      return
+    }
+
+    setReviewValidationError(null)
     await Promise.resolve(onSaveReview(reviewDraft))
   }
 
@@ -367,14 +385,14 @@ export function IncidentDetailSheet({
             {isLoading && (
               <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-secondary/35 px-3 py-2.5 text-sm text-muted-foreground">
                 <Spinner className="size-4" />
-                Refreshing incident details...
+                Loading…
               </div>
             )}
 
             {error && (
               <Alert className="border-border/70 bg-card/70">
                 <AlertCircle className="h-4 w-4 text-amber-400" />
-                <AlertTitle>Incident sync notice</AlertTitle>
+                <AlertTitle>Couldn’t refresh</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
@@ -382,16 +400,16 @@ export function IncidentDetailSheet({
             {(!canMutateIncidents || !canMutateRunbookExecution) && (
               <Alert className="border-border/70 bg-secondary/40">
                 <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                <AlertTitle className="text-sm">Role limits</AlertTitle>
+                <AlertTitle className="text-sm">Read-only</AlertTitle>
                 <AlertDescription className="text-xs leading-relaxed">
                   {!canMutateIncidents
-                    ? "Your current persona cannot change incidents. "
+                    ? "Your role can’t change incidents. "
                     : null}
                   {!canMutateRunbookExecution
-                    ? "Your current persona cannot drive runbook execution. "
+                    ? "Your role can’t update runbook steps. "
                     : null}
                   Use <span className="font-medium text-foreground">Acting as</span> in the header
-                  to switch to an engineer or admin.
+                  to switch to engineer or admin.
                 </AlertDescription>
               </Alert>
             )}
@@ -402,8 +420,8 @@ export function IncidentDetailSheet({
                 <div className="min-w-0 space-y-0.5">
                   <p className="font-medium text-foreground">Major incident</p>
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    Coordinate broadly. Workspace alerts and notifications may surface here for
-                    stakeholders following this incident.
+                    Expect wider coordination and Slack fan-out; linked ingests and notify rows show
+                    below.
                   </p>
                 </div>
               </div>
@@ -455,7 +473,7 @@ export function IncidentDetailSheet({
                 </Button>
               </div>
               <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">Assigned To</p>
+                <p className="text-xs text-muted-foreground">Assignee</p>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <User className="h-4 w-4 text-muted-foreground" />
@@ -472,7 +490,7 @@ export function IncidentDetailSheet({
                       }
                     >
                       <SelectTrigger className="h-9 bg-secondary border-border">
-                        <SelectValue placeholder="Select engineer" />
+                        <SelectValue placeholder="Choose assignee" />
                       </SelectTrigger>
                       <SelectContent>
                         {availableAssignees.map((assignee) => (
@@ -496,7 +514,7 @@ export function IncidentDetailSheet({
                       onClick={() => void handleAssign()}
                     >
                       {isAssigning
-                        ? "Saving..."
+                        ? "Saving…"
                         : incident.assignedTo
                           ? "Reassign"
                           : "Assign"}
@@ -504,14 +522,14 @@ export function IncidentDetailSheet({
                   </div>
                   {showTeamOwnershipHint ? (
                     <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      Assignees match the{" "}
+                      Roster from{" "}
                       <Link
                         href="/team"
                         className="text-primary underline-offset-2 hover:underline"
                       >
                         Team
-                      </Link>{" "}
-                      directory (live roster).
+                      </Link>
+                      .
                     </p>
                   ) : null}
                 </div>
@@ -537,7 +555,7 @@ export function IncidentDetailSheet({
                       onClick={() => void onStartRunbookExecution?.()}
                     >
                       <Play className="mr-2 h-4 w-4" />
-                      {isStartingRunbookExecution ? "Starting..." : "Start Execution"}
+                      {isStartingRunbookExecution ? "Starting…" : "Start execution"}
                     </Button>
                   )}
                 </div>
@@ -562,7 +580,7 @@ export function IncidentDetailSheet({
                       }
                     >
                       <SelectTrigger className="h-9 bg-secondary border-border">
-                        <SelectValue placeholder="Select severity" />
+                        <SelectValue placeholder="Severity" />
                       </SelectTrigger>
                       <SelectContent>
                         {availableSeverities.map((severity) => (
@@ -584,7 +602,7 @@ export function IncidentDetailSheet({
                       }
                       onClick={() => void handleChangeSeverity()}
                     >
-                      {isChangingSeverity ? "Updating..." : "Update Severity"}
+                      {isChangingSeverity ? "Updating…" : "Apply severity"}
                     </Button>
                   </div>
                 </div>
@@ -596,7 +614,7 @@ export function IncidentDetailSheet({
                 </p>
               </div>
               <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">Last Updated</p>
+                <p className="text-xs text-muted-foreground">Updated</p>
                 <p className="text-sm text-foreground">{incident.updatedAt}</p>
               </div>
               <div className="space-y-1">
@@ -620,10 +638,10 @@ export function IncidentDetailSheet({
                 {incident.isMajorIncident && incident.review.status !== "completed" ? (
                   <Alert className="border-amber-500/35 bg-amber-500/[0.06]">
                     <ClipboardList className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                    <AlertTitle className="text-sm">Finish the post-incident review</AlertTitle>
+                    <AlertTitle className="text-sm">Complete post-incident review</AlertTitle>
                     <AlertDescription className="text-xs leading-relaxed">
-                      Major incidents should capture summary, root cause, and follow-ups while context
-                      is fresh. Mark the review completed when ready.
+                      Record summary, root cause, and follow-ups while context is fresh; mark review
+                      completed when done.
                     </AlertDescription>
                   </Alert>
                 ) : null}
@@ -634,20 +652,20 @@ export function IncidentDetailSheet({
                   </h3>
                 </div>
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  Lightweight summary for stakeholders. Timeline and notes above stay the
-                  operational record. Tracked action items also appear on the{" "}
+                  Short recap for leads; timeline and notes above are the live record. Open action
+                  items also list on{" "}
                   <Link
                     href="/follow-ups"
                     className="text-primary underline-offset-2 hover:underline"
                   >
                     Follow-ups
-                  </Link>{" "}
-                  page while open.
+                  </Link>
+                  .
                 </p>
                 <div className="space-y-2 rounded-md border border-border/50 bg-card/40 px-3 py-2.5">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Completeness
+                      Review
                     </span>
                     <Badge variant="outline" className="text-[10px] border-border/70">
                       {reviewStatusLabel}
@@ -666,7 +684,7 @@ export function IncidentDetailSheet({
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">
-                        No tracked action items yet
+                        No action items
                       </span>
                     )}
                   </div>
@@ -679,7 +697,7 @@ export function IncidentDetailSheet({
                         />
                       </div>
                       <p className="text-[10px] leading-snug text-muted-foreground">
-                        {reviewAddressedPct}% of tracked items closed (done or dropped)
+                        {reviewAddressedPct}% items closed (done or dropped)
                       </p>
                     </div>
                   ) : null}
@@ -687,17 +705,17 @@ export function IncidentDetailSheet({
                     <p className="text-[10px] leading-relaxed text-muted-foreground">
                       {!reviewDraft.summary.trim() ? (
                         <span className="text-amber-700/85 dark:text-amber-400/90">
-                          Summary still empty.{" "}
+                          Summary missing.{" "}
                         </span>
                       ) : null}
                       {!reviewDraft.rootCause.trim() ? (
                         <span className="text-amber-700/85 dark:text-amber-400/90">
-                          Root cause & resolution still empty.{" "}
+                          Root cause / fix missing.{" "}
                         </span>
                       ) : null}
                       {reviewDraft.summary.trim() && reviewDraft.rootCause.trim() ? (
                         <span className="text-emerald-700/90 dark:text-emerald-400/85">
-                          Summary and root cause captured.
+                          Summary and root cause filled.
                         </span>
                       ) : null}
                     </p>
@@ -706,14 +724,13 @@ export function IncidentDetailSheet({
                 {hasCompletedReviewWithOpenActions(reviewDraft) ? (
                   <Alert className="border-amber-500/35 bg-amber-500/[0.06]">
                     <AlertCircle className="h-4 w-4 text-amber-500" />
-                    <AlertTitle className="text-sm">Open follow-ups remain</AlertTitle>
+                    <AlertTitle className="text-sm">Review closed; items still open</AlertTitle>
                     <AlertDescription className="text-xs leading-relaxed">
-                      The review is marked completed, but{" "}
+                      Review is completed but{" "}
                       <span className="font-medium text-foreground">
                         {reviewItemProgress.open}
                       </span>{" "}
-                      action item(s) are still open. They stay on the Follow-ups page until
-                      marked done or dropped.
+                      action item(s) remain open. They stay on Follow-ups until done or dropped.
                     </AlertDescription>
                   </Alert>
                 ) : null}
@@ -722,10 +739,27 @@ export function IncidentDetailSheet({
                 reviewItemProgress.open === 0 ? (
                   <Alert className="border-border/60 bg-secondary/35">
                     <ListChecks className="h-4 w-4 text-muted-foreground" />
-                    <AlertTitle className="text-sm">Tracked work closed</AlertTitle>
+                    <AlertTitle className="text-sm">All items closed</AlertTitle>
                     <AlertDescription className="text-xs leading-relaxed">
-                      All action items are done or dropped. When narrative is ready, mark the
-                      review completed.
+                      Every action item is done or dropped. When narrative is ready, mark review
+                      completed.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+                {!canMarkReviewCompleted ? (
+                  <Alert className="border-border/60 bg-secondary/35">
+                    <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    <AlertTitle className="text-sm">Completion requires minimum fields</AlertTitle>
+                    <AlertDescription className="text-xs leading-relaxed">
+                      Add summary, root cause/fix, and either follow-up notes or at least one action item.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+                {reviewValidationError ? (
+                  <Alert className="border-amber-500/35 bg-amber-500/[0.06]">
+                    <AlertCircle className="h-4 w-4 text-amber-500" />
+                    <AlertDescription className="text-xs leading-relaxed">
+                      {reviewValidationError}
                     </AlertDescription>
                   </Alert>
                 ) : null}
@@ -733,12 +767,13 @@ export function IncidentDetailSheet({
                   <p className="text-xs text-muted-foreground">Status</p>
                   <Select
                     value={reviewDraft.status}
-                    onValueChange={(value) =>
+                    onValueChange={(value) => {
+                      setReviewValidationError(null)
                       setReviewDraft((prev) => ({
                         ...prev,
                         status: value as IncidentReviewStatus,
                       }))
-                    }
+                    }}
                     disabled={!canMutateIncidents || isSavingReview}
                   >
                     <SelectTrigger className="h-9 bg-secondary border-border">
@@ -762,7 +797,7 @@ export function IncidentDetailSheet({
                       setReviewDraft((prev) => ({ ...prev, summary: e.target.value }))
                     }
                     disabled={!canMutateIncidents || isSavingReview}
-                    placeholder="What happened, in a few sentences…"
+                    placeholder="Customer impact, scope, timeline (short)…"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -774,7 +809,7 @@ export function IncidentDetailSheet({
                       setReviewDraft((prev) => ({ ...prev, rootCause: e.target.value }))
                     }
                     disabled={!canMutateIncidents || isSavingReview}
-                    placeholder="Why it occurred and how it was fixed…"
+                    placeholder="Cause, mitigation, permanent fix…"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -786,7 +821,7 @@ export function IncidentDetailSheet({
                       setReviewDraft((prev) => ({ ...prev, followUps: e.target.value }))
                     }
                     disabled={!canMutateIncidents || isSavingReview}
-                    placeholder="Extra context, links, or narrative (not required for tracked items below)…"
+                    placeholder="Links, tickets, context (tracked items are below)…"
                   />
                 </div>
                 <div className="space-y-2">
@@ -813,7 +848,7 @@ export function IncidentDetailSheet({
                   </div>
                   {reviewDraft.actionItems.length === 0 ? (
                     <p className="text-[11px] text-muted-foreground">
-                      No tracked items yet. Add one to assign owners, status, and due dates.
+                      None yet—add rows for task, owner, status, due.
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -836,7 +871,7 @@ export function IncidentDetailSheet({
                                 }))
                               }}
                               disabled={!canMutateIncidents || isSavingReview}
-                              placeholder="What needs to happen"
+                              placeholder="Task"
                             />
                             <Button
                               type="button"
@@ -977,13 +1012,13 @@ export function IncidentDetailSheet({
                   )}
                 </div>
                 {isRunbookExecutionLoading ? (
-                  <p className="text-xs text-muted-foreground">Loading execution state...</p>
+                  <p className="text-xs text-muted-foreground">Loading execution state…</p>
                 ) : runbookExecutionContext ? (
                   <>
                     {!runbookExecutionContext.runbookId && runbookExecutionContext.runbookTitle ? (
                       <p className="text-xs text-amber-600/90">
-                        Assigned runbook &quot;{runbookExecutionContext.runbookTitle}&quot; was not
-                        found in the runbook catalog.
+                        Assigned runbook &quot;{runbookExecutionContext.runbookTitle}&quot; is not
+                        in the catalog.
                       </p>
                     ) : null}
                     {runbookExecutionContext.activeExecution &&
@@ -1007,7 +1042,7 @@ export function IncidentDetailSheet({
                               : ""}
                           </span>
                         </div>
-                        <p className="text-xs text-muted-foreground">Checklist</p>
+                        <p className="text-xs text-muted-foreground">Steps</p>
                         <div className="space-y-2">
                           {[...runbookExecutionContext.steps]
                             .sort((a, b) => a.order - b.order)
@@ -1150,13 +1185,13 @@ export function IncidentDetailSheet({
                       </div>
                     ) : runbookExecutionContext.runbookId ? (
                       <p className="text-xs text-muted-foreground">
-                        No active execution. Start one above when ready.
+                        No active execution. Start above.
                       </p>
                     ) : null}
                     {runbookExecutionContext.history.length > 0 ? (
                       <div className="space-y-2 border-t border-border/50 pt-3">
                         <p className="text-xs font-medium text-muted-foreground">
-                          Recent runs (this incident)
+                          Prior executions
                         </p>
                         <ul className="space-y-1.5">
                           {runbookExecutionContext.history.map((exec) => (
@@ -1180,7 +1215,7 @@ export function IncidentDetailSheet({
                   </>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Execution details load when connected to the live API.
+                    Runbook state loads when the API is reachable.
                   </p>
                 )}
               </div>
@@ -1189,12 +1224,12 @@ export function IncidentDetailSheet({
             {workspaceEnrichmentLive ? (
               <div className="space-y-4 rounded-lg border border-border/60 bg-secondary/20 p-3">
                 <h3 className="text-sm font-medium text-muted-foreground">
-                  Workspace context
+                  Ingests & notifications
                 </h3>
                 {isWorkspaceEnrichmentLoading ? (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Spinner className="size-3.5" />
-                    Loading linked alerts and notifications…
+                    Loading ingests and notifications…
                   </div>
                 ) : workspaceEnrichmentError ? (
                   <p className="text-xs text-amber-600/90">{workspaceEnrichmentError}</p>
@@ -1203,11 +1238,11 @@ export function IncidentDetailSheet({
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
                         <History className="h-3.5 w-3.5" />
-                        Alert ingests (this incident)
+                        Alert ingests
                       </p>
                       {workspaceEnrichment.alertIngests.length === 0 ? (
                         <p className="text-xs text-muted-foreground">
-                          No alert ingests recorded for this incident.
+                          No ingests for this incident id.
                         </p>
                       ) : (
                         <ul className="space-y-2">
@@ -1248,11 +1283,11 @@ export function IncidentDetailSheet({
                     <div className="space-y-2 border-t border-border/50 pt-3">
                       <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
                         <Bell className="h-3.5 w-3.5" />
-                        Notifications (this incident)
+                        Notifications
                       </p>
                       {workspaceEnrichment.notifications.length === 0 ? (
                         <p className="text-xs text-muted-foreground">
-                          No notification activity recorded yet.
+                          No notification rows for this incident id.
                         </p>
                       ) : (
                         <ul className="space-y-2">
@@ -1332,7 +1367,7 @@ export function IncidentDetailSheet({
             {/* Notes */}
             <div className="space-y-3">
               <h3 className="text-sm font-medium text-muted-foreground">
-                Notes & Comments
+                Notes
               </h3>
               {incident.notes.length > 0 ? (
                 <div className="space-y-3">
@@ -1360,7 +1395,7 @@ export function IncidentDetailSheet({
               {/* Add Note */}
               <div className="space-y-2 pt-2">
                 <Textarea
-                  placeholder="Add an operational note..."
+                  placeholder="Handoff, hypothesis, command output…"
                   className="bg-secondary border-border min-h-[80px] resize-none"
                   value={noteInput}
                   onChange={(event) => setNoteInput(event.target.value)}
@@ -1376,7 +1411,7 @@ export function IncidentDetailSheet({
                   }
                   onClick={() => void handleAddNote()}
                 >
-                  {isAddingNote ? "Adding note..." : "Add Note"}
+                  {isAddingNote ? "Adding…" : "Add note"}
                 </Button>
               </div>
             </div>
@@ -1393,7 +1428,7 @@ export function IncidentDetailSheet({
                   onClick={onAcknowledge}
                 >
                   <CheckCircle className="mr-2 h-4 w-4" />
-                  {isAcknowledging ? "Acknowledging..." : "Acknowledge"}
+                  {isAcknowledging ? "Acknowledging…" : "Acknowledge"}
                 </Button>
               )}
               {incident.status !== "resolved" && (
@@ -1405,7 +1440,7 @@ export function IncidentDetailSheet({
                     onClick={onResolve}
                   >
                     <CheckCircle className="mr-2 h-4 w-4" />
-                    {isResolving ? "Resolving..." : "Resolve"}
+                    {isResolving ? "Resolving…" : "Resolve"}
                   </Button>
                 </>
               )}
@@ -1417,7 +1452,7 @@ export function IncidentDetailSheet({
                   onClick={onReopen}
                 >
                   <XCircle className="mr-2 h-4 w-4" />
-                  {isReopening ? "Reopening..." : "Reopen"}
+                  {isReopening ? "Reopening…" : "Reopen"}
                 </Button>
               )}
             </div>

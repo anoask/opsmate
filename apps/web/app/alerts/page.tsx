@@ -40,6 +40,7 @@ export default function AlertsHistoryPage() {
   const [items, setItems] = useState<AlertHistoryItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
   const [limit, setLimit] = useState("30")
   const [disposition, setDisposition] = useState<DispositionFilter>("all")
 
@@ -60,12 +61,14 @@ export default function AlertsHistoryPage() {
           return
         }
         setItems(feed.items)
+        setLastRefreshedAt(new Date().toISOString())
       } catch {
         if (!isMounted) {
           return
         }
         setItems([])
         setError("Unable to load alert history right now.")
+        setLastRefreshedAt(new Date().toISOString())
       } finally {
         if (isMounted) {
           setIsLoading(false)
@@ -85,11 +88,17 @@ export default function AlertsHistoryPage() {
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="space-y-1.5">
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-            Alerts History
+            Alerts
           </h1>
           <p className="text-sm text-muted-foreground">
-            Recent ingested alerts and how they mapped to incidents.
+            Ingest log: new incidents vs merges into an open incident.
           </p>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline" className="border-border/70 bg-secondary/40 text-[10px]">
+              Live API
+            </Badge>
+            <span>Last refreshed: {lastRefreshedAt ? new Date(lastRefreshedAt).toLocaleTimeString() : "—"}</span>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -118,20 +127,20 @@ export default function AlertsHistoryPage() {
         {error && (
           <Alert className="border-border/70 bg-card/70">
             <AlertTriangle className="h-4 w-4 text-amber-400" />
-            <AlertTitle>Alerts history notice</AlertTitle>
+            <AlertTitle>Couldn’t load</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
         <Card className="border-border/70 bg-card/70">
           <CardHeader>
-            <CardTitle className="text-base">Ingested Alerts</CardTitle>
+            <CardTitle className="text-base">Ingest log</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading alert history...</p>
+              <p className="text-sm text-muted-foreground">Loading…</p>
             ) : items.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No alert history found.</p>
+              <p className="text-sm text-muted-foreground">No rows in this range.</p>
             ) : (
               items.map((item) => (
                 <div

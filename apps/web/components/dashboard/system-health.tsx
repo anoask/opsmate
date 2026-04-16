@@ -6,7 +6,7 @@ export function SystemHealth() {
   return (
     <Card className="bg-card border-border shadow-black/20">
       <CardHeader>
-        <CardTitle className="text-base font-semibold">System Health</CardTitle>
+        <CardTitle className="text-base font-semibold">Service status (illustrative)</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {serviceStatuses.map((service) => {

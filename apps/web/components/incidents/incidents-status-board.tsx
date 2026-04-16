@@ -57,7 +57,7 @@ export function IncidentsStatusBoard({
   if (incidents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/70 bg-card/50 px-6 py-14 text-center">
-        <p className="text-sm font-medium text-foreground">No incidents found</p>
+        <p className="text-sm font-medium text-foreground">No incidents match filters</p>
         <p className="mt-1 text-sm text-muted-foreground">
           Try adjusting your filters or view
         </p>
@@ -102,7 +102,13 @@ export function IncidentsStatusBoard({
                   None in this column
                 </p>
               ) : (
-                columnIncidents.map((incident) => (
+                columnIncidents.map((incident) => {
+                  const isUnassignedHighRisk =
+                    !incident.isMajorIncident &&
+                    incident.status !== "resolved" &&
+                    !incident.assignedTo?.trim() &&
+                    (incident.severity === "critical" || incident.severity === "high")
+                  return (
                   <button
                     key={incident.id}
                     type="button"
@@ -111,7 +117,9 @@ export function IncidentsStatusBoard({
                     className={cn(
                       "w-full rounded-lg border border-border/60 bg-secondary/20 p-3 text-left transition-colors hover:bg-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                       incident.isMajorIncident && "border-l-2 border-l-rose-500/55",
+                      isUnassignedHighRisk && "border-l-2 border-l-red-500/55 bg-red-500/[0.03]",
                       !incident.isMajorIncident &&
+                        !isUnassignedHighRisk &&
                         incident.status !== "resolved" &&
                         !incident.assignedTo?.trim() &&
                         "border-l-2 border-l-amber-500/50",
@@ -136,6 +144,14 @@ export function IncidentsStatusBoard({
                     <p className="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-foreground">
                       {incident.title}
                     </p>
+                    {isUnassignedHighRisk ? (
+                      <Badge
+                        variant="outline"
+                        className="mt-1 h-5 border-red-500/35 text-[10px] text-red-600 dark:text-red-400"
+                      >
+                        Unassigned high risk
+                      </Badge>
+                    ) : null}
                     {incident.description.trim().length > 0 ? (
                       <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                         {incident.description}
@@ -180,7 +196,8 @@ export function IncidentsStatusBoard({
                       </span>
                     </div>
                   </button>
-                ))
+                  )
+                })
               )}
             </div>
           </section>

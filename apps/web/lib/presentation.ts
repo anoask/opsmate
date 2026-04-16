@@ -60,7 +60,7 @@ export const incidentTimelineEventTypeLabels: Record<
   created: 'Created',
   acknowledged: 'Acknowledged',
   updated: 'Updated',
-  alert_merged: 'Alert merged',
+  alert_merged: 'Alert deduped',
   assigned: 'Assigned',
   escalated: 'Escalated',
   severity_changed: 'Severity changed',

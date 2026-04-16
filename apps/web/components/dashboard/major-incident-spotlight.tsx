@@ -44,8 +44,7 @@ export function MajorIncidentSpotlight({
             Major incidents
           </CardTitle>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Active majors need coordination; resolved majors should finish post-incident review while
-            context is fresh.
+            Track open majors; finish post-incident review on resolved majors before context fades.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -75,11 +74,11 @@ export function MajorIncidentSpotlight({
         {isLoading ? (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
             <Spinner className="size-4" />
-            Loading major incident snapshot…
+            Loading…
           </div>
         ) : majorActiveCount === 0 && reviewBacklog === 0 ? (
           <p className="py-4 text-sm text-muted-foreground">
-            No active major incidents and no resolved majors waiting on review completion.
+            No open majors; no resolved majors pending post-incident review.
           </p>
         ) : (
           <div className="space-y-4">
@@ -114,7 +113,7 @@ export function MajorIncidentSpotlight({
                         </div>
                         <p className="shrink-0 text-xs text-muted-foreground sm:text-right">
                           {incident.assignedTo?.trim() ? (
-                            <>Owner: {incident.assignedTo}</>
+                            <>Assignee: {incident.assignedTo}</>
                           ) : (
                             <span className="font-medium text-amber-700/90 dark:text-amber-400/90">
                               Unassigned
@@ -127,14 +126,14 @@ export function MajorIncidentSpotlight({
                 </ul>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No active major incidents right now.</p>
+              <p className="text-sm text-muted-foreground">No open major incidents.</p>
             )}
             {reviewBacklog > 0 ? (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.05] px-3 py-2.5 text-sm">
                 <span className="font-medium text-foreground">{reviewBacklog} resolved major</span>
                 <span className="text-muted-foreground">
                   {" "}
-                  still need a completed post-incident review.{" "}
+                  still need post-incident review completed.{" "}
                   <Link
                     href="/incidents?quick=major-review"
                     className="text-primary underline-offset-2 hover:underline"

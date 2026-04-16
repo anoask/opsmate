@@ -38,7 +38,7 @@ export function IncidentsFullTable({
   if (incidents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/70 bg-card/50 px-6 py-14 text-center">
-        <p className="text-sm font-medium text-foreground">No incidents found</p>
+        <p className="text-sm font-medium text-foreground">No incidents match filters</p>
         <p className="mt-1 text-sm text-muted-foreground">
           Try adjusting your filters
         </p>
@@ -63,13 +63,21 @@ export function IncidentsFullTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {incidents.map((incident) => (
+          {incidents.map((incident) => {
+            const isUnassignedHighRisk =
+              !incident.isMajorIncident &&
+              incident.status !== "resolved" &&
+              !incident.assignedTo?.trim() &&
+              (incident.severity === "critical" || incident.severity === "high")
+            return (
             <TableRow
               key={incident.id}
               className={cn(
                 "cursor-pointer border-border/60 hover:bg-secondary/35",
                 incident.isMajorIncident && "border-l-2 border-l-rose-500/55",
+                isUnassignedHighRisk && "border-l-2 border-l-red-500/55 bg-red-500/[0.03]",
                 !incident.isMajorIncident &&
+                  !isUnassignedHighRisk &&
                   incident.status !== "resolved" &&
                   !incident.assignedTo?.trim() &&
                   "border-l-2 border-l-amber-500/50",
@@ -94,6 +102,14 @@ export function IncidentsFullTable({
               </TableCell>
               <TableCell className="max-w-[280px] truncate font-medium">
                 {incident.title}
+                {isUnassignedHighRisk ? (
+                  <Badge
+                    variant="outline"
+                    className="ml-2 h-5 border-red-500/35 text-[10px] text-red-600 dark:text-red-400"
+                  >
+                    Unassigned high risk
+                  </Badge>
+                ) : null}
               </TableCell>
               <TableCell>
                 <Badge
@@ -169,7 +185,8 @@ export function IncidentsFullTable({
                 </DropdownMenu>
               </TableCell>
             </TableRow>
-          ))}
+            )
+          })}
         </TableBody>
       </Table>
     </div>

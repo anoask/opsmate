@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import { AlertTriangle } from "lucide-react"
 import { useActor, OPSMATE_DEFAULT_ACTOR_NAME } from "@/components/actor-context"
 import { AppShell } from "@/components/app-shell"
@@ -17,11 +18,13 @@ import {
   CategoryDistributionChart,
 } from "@/components/dashboard/incident-charts"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { defaultAnalyticsDateRange } from "@/lib/analytics/date-range"
 import { getAlertActivity, getAlertHistory } from "@/lib/api/alerts"
 import { loadIncidents } from "@/lib/api/incidents"
 import { buildDashboardIncidentSnapshot } from "@/lib/dashboard/incidents"
 import { countOverdueOpenReviewActionItems } from "@/lib/follow-ups"
+import type { IncidentsDataSource } from "@/lib/api/incidents"
 import type { AlertActivityItem, AlertHistoryItem, Incident } from "@/lib/types"
 
 export default function DashboardPage() {
@@ -38,6 +41,8 @@ function DashboardPageContent() {
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [isLoadingIncidents, setIsLoadingIncidents] = useState(true)
   const [incidentsWarning, setIncidentsWarning] = useState<string | null>(null)
+  const [dataSource, setDataSource] = useState<IncidentsDataSource>("backend")
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
   const [alertActivity, setAlertActivity] = useState<AlertActivityItem[]>([])
   const [isLoadingAlertActivity, setIsLoadingAlertActivity] = useState(true)
   const [alertHistory, setAlertHistory] = useState<AlertHistoryItem[]>([])
@@ -58,13 +63,17 @@ function DashboardPageContent() {
 
         setIncidents(result.incidents)
         setIncidentsWarning(result.warning ?? null)
+        setDataSource(result.source)
+        setLastRefreshedAt(new Date().toISOString())
       } catch {
         if (!isMounted) {
           return
         }
 
         setIncidents([])
+        setDataSource("mock")
         setIncidentsWarning("Unable to load live incidents right now.")
+        setLastRefreshedAt(new Date().toISOString())
       } finally {
         if (isMounted) {
           setIsLoadingIncidents(false)
@@ -162,26 +171,61 @@ function DashboardPageContent() {
     () => countOverdueOpenReviewActionItems(incidents),
     [incidents],
   )
+  const unassignedHighSeverityCount = useMemo(
+    () =>
+      incidents.filter(
+        (i) =>
+          i.status !== "resolved" &&
+          !i.assignedTo?.trim() &&
+          (i.severity === "critical" || i.severity === "high"),
+      ).length,
+    [incidents],
+  )
+  const sourceLabel = dataSource === "backend" ? "Live API" : "Limited data"
 
   return (
     <>
       {/* Page Header */}
       <div className="mb-8 space-y-1.5">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-          Dashboard
+          Home
         </h1>
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground/90">
-          Monitor and manage incidents across your infrastructure
+          Snapshot: unassigned load, your open rows, overdue post-incident review items. Full queue and lifecycle are
+          in{" "}
+          <Link href="/incidents" className="font-medium text-primary underline-offset-2 hover:underline">
+            Incidents
+          </Link>
+          .
         </p>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Badge variant="outline" className="border-border/70 bg-secondary/40 text-[10px]">
+            {sourceLabel}
+          </Badge>
+          <span>Last refreshed: {lastRefreshedAt ? new Date(lastRefreshedAt).toLocaleTimeString() : "—"}</span>
+        </div>
       </div>
 
       {incidentsWarning && (
         <Alert className="mb-6 border-border/70 bg-card/70">
           <AlertTriangle className="h-4 w-4 text-amber-400" />
-          <AlertTitle>Incident data notice</AlertTitle>
+          <AlertTitle>Limited data</AlertTitle>
           <AlertDescription>{incidentsWarning}</AlertDescription>
         </Alert>
       )}
+      {overdueFollowUpCount > 0 ? (
+        <Alert className="mb-6 border-red-500/35 bg-red-500/[0.06]">
+          <AlertTriangle className="h-4 w-4 text-red-500" />
+          <AlertTitle>Overdue follow-ups</AlertTitle>
+          <AlertDescription>
+            {overdueFollowUpCount} action item(s) are past due.{" "}
+            <Link href="/follow-ups" className="font-medium text-primary underline-offset-2 hover:underline">
+              Open Follow-ups
+            </Link>
+            .
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       {/* KPI Cards */}
       <KPICards
@@ -195,6 +239,7 @@ function DashboardPageContent() {
 
       <OperatorSignalsStrip
         unassignedActive={incidentSnapshot.unassignedActiveIncidents}
+        unassignedHighSeverity={unassignedHighSeverityCount}
         mineActive={mineActiveIncidents}
         overdueFollowUps={overdueFollowUpCount}
         isLoading={isLoadingIncidents}

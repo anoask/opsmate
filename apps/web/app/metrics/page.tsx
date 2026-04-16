@@ -73,8 +73,10 @@ export default function MetricsPage() {
       <div className="sticky top-0 bg-background z-10 pt-6 px-6 border-b border-border pb-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Metrics</h1>
-            <p className="text-muted-foreground mt-1">Track MTTR, incident trends, and team performance</p>
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">Metrics</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              MTTR, volume, and category mix from incident data in range.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-muted-foreground" />

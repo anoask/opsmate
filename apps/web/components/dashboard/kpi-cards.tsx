@@ -21,7 +21,7 @@ export function KPICards({
 }: KPICardsProps) {
   const kpis: MetricCard[] = [
     {
-      label: "Active Alerts",
+      label: "Open incidents",
       value: activeAlerts,
       icon: AlertCircle,
       color: "text-orange-500",

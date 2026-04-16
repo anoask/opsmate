@@ -48,7 +48,7 @@ const quickLinks = [
   { href: '/notifications', label: 'Notification center', icon: Bell },
   { href: '/follow-ups', label: 'Follow-ups', icon: ClipboardList },
   { href: '/alerts', label: 'Alerts history', icon: Radio },
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/', label: 'Home', icon: LayoutDashboard },
   { href: '/incidents', label: 'Incidents', icon: ShieldAlert },
 ] as const
 

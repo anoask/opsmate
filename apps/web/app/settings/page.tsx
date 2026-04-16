@@ -18,10 +18,9 @@ export default function SettingsPage() {
       <div className="sticky top-0 bg-background z-10 pt-6 px-6 border-b border-border pb-4">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground">Settings</h1>
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-          Team roster, per-user Slack routing, and delivery history are live on other pages. Some
-          controls below are illustrative until wired to the backend—see each section. Signed-in{' '}
-          <span className="font-medium text-foreground">admins</span> see an extra workspace
-          governance panel under <span className="font-medium text-foreground">Workspace overview</span>.
+          Live: workspace signals and roster context. Other tabs mix mock UI — see each card.
+          Admins get <span className="font-medium text-foreground">Workspace governance</span> under
+          overview.
         </p>
       </div>
 

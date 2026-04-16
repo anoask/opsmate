@@ -28,13 +28,13 @@ export function AlertsHistory({
     <Card className="border-border bg-card shadow-black/20">
       <CardHeader className="flex flex-row items-center gap-2">
         <History className="h-4 w-4 text-primary" />
-        <CardTitle className="text-base font-semibold">Recent Alert Ingests</CardTitle>
+        <CardTitle className="text-base font-semibold">Recent ingests</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {isLoading ? (
-          <div className="text-sm text-muted-foreground">Loading alert history...</div>
+          <div className="text-sm text-muted-foreground">Loading…</div>
         ) : items.length === 0 ? (
-          <div className="text-sm text-muted-foreground">No recent alert ingests.</div>
+          <div className="text-sm text-muted-foreground">No recent ingests.</div>
         ) : (
           items.map((item) => (
             <div

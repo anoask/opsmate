@@ -134,7 +134,7 @@ export default function RunbooksPage() {
           <CardContent className="flex items-center justify-center gap-3 py-12">
             <Spinner className="size-4 text-muted-foreground" />
             <span className="text-sm text-muted-foreground">
-              Loading runbooks...
+              Loading runbooks…
             </span>
           </CardContent>
         </Card>
@@ -166,7 +166,7 @@ export default function RunbooksPage() {
         <Card className="bg-card border-border">
           <CardContent className="pt-8 pb-8 text-center">
             <p className="text-muted-foreground">
-              No runbooks found matching your filters.
+              No runbooks match filters.
             </p>
           </CardContent>
         </Card>
@@ -192,14 +192,14 @@ export default function RunbooksPage() {
             Runbooks
           </h1>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground/90">
-            Browse and manage operational runbooks for incident response
+            Checklists linked from incidents; each execution is tied to an incident row.
           </p>
         </div>
 
         {loadWarning && (
           <Alert className="border-border/70 bg-card/70">
             <AlertTriangle className="h-4 w-4 text-amber-400" />
-            <AlertTitle>Demo mode</AlertTitle>
+            <AlertTitle>Limited data</AlertTitle>
             <AlertDescription>{loadWarning}</AlertDescription>
           </Alert>
         )}

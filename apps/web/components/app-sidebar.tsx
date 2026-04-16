@@ -17,10 +17,10 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 
 const navItems = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Incidents", href: "/incidents", icon: AlertTriangle },
+  { name: "Home", href: "/", icon: LayoutDashboard },
   { name: "Follow-ups", href: "/follow-ups", icon: ListTodo },
-  { name: "Alerts History", href: "/alerts", icon: History },
+  { name: "Alerts", href: "/alerts", icon: History },
   { name: "Runbooks", href: "/runbooks", icon: BookOpen },
   { name: "Team", href: "/team", icon: Users },
   { name: "Notifications", href: "/notifications", icon: Bell },
@@ -43,7 +43,7 @@ export function AppSidebar() {
             OpsMate
           </span>
           <span className="text-[10px] text-muted-foreground">
-            Incident Companion
+            Alert → triage → follow-up
           </span>
         </div>
       </div>
@@ -74,7 +74,7 @@ export function AppSidebar() {
       {/* Footer */}
       <div className="border-t border-sidebar-border p-4">
         <p className="text-[10px] leading-relaxed text-muted-foreground">
-          Smart incident companion for modern infrastructure teams
+          Incidents are the queue; other routes are ingest, runbooks, and recap.
         </p>
       </div>
     </aside>

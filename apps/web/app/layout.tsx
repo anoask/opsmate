@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'OpsMate - Incident Management Dashboard',
-  description: 'Smart incident companion for modern infrastructure teams',
+  title: 'OpsMate',
+  description: 'Triage and run incidents from alert through follow-up.',
   icons: {
     icon: [
       {
