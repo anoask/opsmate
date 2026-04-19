@@ -4,7 +4,13 @@ OpsMate is a full-stack incident operations app for infrastructure teams. It com
 
 ## Screenshots
 
-![OpsMate dashboard](docs/dashboard.png)![OpsMate runbooks](docs/runbooks.png)![OpsMate metrics](docs/metrics.png)
+<table>
+  <tr>
+    <td><img src="docs/dashboard.png" width="200"></td>
+    <td><img src="docs/runbooks.png" width="200"></td>
+    <td><img src="docs/metrics.png" width="200"></td>
+  </tr>
+</table>
 
 ## What It Is
 
