@@ -64,3 +64,6 @@ Repository shape:
 └── .env.example
 ```
 
+## Note
+
+Login is still demo with no password.
